@@ -1,8 +1,8 @@
+from IPython.display import display, HTML
 import tempfile, os, colorsys
-from ccdc import io
 import py3Dmol
 
-from IPython.display import display, HTML
+from ccdc import io
 from ccdc.io import MoleculeWriter
 
 from rdkit import Chem
@@ -23,7 +23,6 @@ def visualise_mol(mol, optimised_mol=None):
 
     view.addModel(sdf1, 'sdf')   # model index = 0
     view.setStyle({'model': 0}, {'stick': {}}) 
-    # (no color specified → py3Dmol uses default element colours)
 
     # ---------- model 1: optimised (custom colour) ----------
     if optimised_mol is not None:
@@ -40,8 +39,6 @@ def visualise_mol(mol, optimised_mol=None):
     view.zoomTo()
     view.setBackgroundColor('white')
     display(view)
-
-
 
 
 def _distinct_colors_hex(n):
@@ -68,7 +65,6 @@ def visualise_conformers(conformers,
                          align=True,
                          preserve_first_element_colours=True,
                          stick_radius=0.12,
-                         sphere_radius=0.28,
                          stick_opacity=0.80,
                          width=900, height=700):
     """
@@ -143,10 +139,10 @@ def visualise_conformers(conformers,
 
         if i == 0 and preserve_first_element_colours:
             # element-based colouring: just set stick with no forced colour
-            view.setStyle({'model': i}, {'stick': {'radius': stick_radius, 'color': colors[i]}})
+            view.setStyle({'model': i}, {'stick': {'radius': stick_radius, 'color': "blue", 'opacity': stick_opacity}})
 
             # Faint spheres to improve visibility of overlapped atoms
-            view.setStyle({'model': i}, {'sphere': {'radius': sphere_radius, 'opacity': stick_opacity}})
+            # view.setStyle({'model': i}, {'sphere': {'radius': sphere_radius, 'opacity': stick_opacity}})
            
         else:
             col = colors[i]
