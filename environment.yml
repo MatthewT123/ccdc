@@ -1,0 +1,32 @@
+name: MolFLAE2
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - blas=*=openblas
+  - numpy=1.26.*        
+  - scipy
+  - matplotlib
+  - pandas
+  - pyyaml
+  - rdkit=2023.09.5
+  - openbabel=3.1.1
+  - absl-py
+  - fire
+  - ipykernel
+  - pip
+  - pip:
+    - pytorch-lightning
+    - torchmetrics
+    - flow-matching
+    - torchdiffeq
+    - torch-ema
+    - datamol
+    - selfies
+    - biopython
+    - biotite
+    - wandb
+    - loguru
+    - tqdm
+    - seaborn
+    - scikit-learn

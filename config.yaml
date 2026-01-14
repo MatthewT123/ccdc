@@ -1,0 +1,22 @@
+encoder_config:
+  num_blocks: 1                  
+  num_layers: 9                  
+  hidden_dim: 128               
+  n_heads: 16                     
+  knn: 32                        
+  num_r_gaussian: 20             
+  edge_feat_dim: 4               
+  num_node_types: 8              
+  act_fn: relu                
+  norm: True                     
+  cutoff_mode: global        
+  ew_net_type: r               
+  num_init_x2h: 1                
+  num_init_h2x: 1                
+  num_x2h: 1                     
+  num_h2x: 1                     
+  r_max: 10.0                    
+  x2h_out_fc: False               
+  sync_twoup: False              
+  global_node_num: 10            
+  ligand_v_dim: 9
