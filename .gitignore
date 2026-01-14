@@ -5,5 +5,4 @@
 /miniconda
 /output.mol2
 data/
-weights/
 *.pyc

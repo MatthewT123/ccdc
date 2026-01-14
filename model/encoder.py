@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 from model.uni_transformer import UniTransformerO2TwoUpdateGeneral
 
+from utils.config import load_config
+
+# load the config   
+cfg = load_config("config.yaml")
 
 class Encoder(nn.Module):
     def __init__(self, num_blocks, num_layers, hidden_dim, n_heads=1, knn=32,
@@ -103,7 +107,38 @@ class Encoder(nn.Module):
         global_positions_updated = x_updated[-batch_size * self.global_node_num:]
 
         return global_nodes_updated, global_positions_updated, global_batch
-    
+
+    def encode(self, one_hot_h, x, batch_ligand, deterministic=False):
+        #global_batch：[0,0,……(10),1,1,……(10),…………]
+        #global_h：hidden_dim
+        global_h, global_x, global_batch = self.forward(
+            one_hot_h,
+            x,
+            batch_ligand
+        )
+        
+        #mu&var;global_h:hidden_dim→latent_dim
+        Zh_mu = self.Wh_mu(global_h)
+        Zh_log_var = -torch.abs(self.Wh_log_var(global_h))
+        Zx_mu = global_x.clone()
+
+        # clamp log_var to avoid too large variance
+        upper = torch.log(torch.tensor(cfg['train']['kl_loss']['sigma2']**2, device=Zx_mu.device, dtype=Zx_mu.dtype))
+        raw = self.Wx_log_var(global_h).expand_as(Zx_mu)
+        Zx_log_var = torch.clamp(raw, max=upper)
+
+        data_size = torch.unique(global_batch).size(0)
+
+        Zh_kl_loss = -0.5 * torch.sum(1.0 + Zh_log_var - Zh_mu * Zh_mu - torch.exp(Zh_log_var)) / (data_size * Zh_mu.shape[-1])
+        Zx_kl_loss = -0.5 * torch.sum(1.0 + Zx_log_var - 
+                                      (Zx_mu * Zx_mu + torch.exp(Zx_log_var))/(cfg['train']['kl_loss']['sigma2'])**2) / (data_size * Zx_mu.shape[-1])
+        
+        #rsample
+        Zh_sampled = Zh_mu if deterministic else Zh_mu + torch.exp(Zh_log_var / 2) * torch.randn_like(Zh_mu)
+        Zx_sampled = Zx_mu if deterministic else Zx_mu + torch.exp(Zx_log_var / 2) * torch.randn_like(Zx_mu)
+        
+        return Zh_sampled, Zx_sampled, global_batch, Zh_kl_loss, Zx_kl_loss    
+
 
 class MLP(nn.Module):
     """MLP with the same hidden dim across all layers."""
