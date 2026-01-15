@@ -7,18 +7,27 @@ from utils.config import load_config
 # load the config   
 cfg = load_config("config.yaml")
 
+
 class Encoder(nn.Module):
     def __init__(self, num_blocks, num_layers, hidden_dim, n_heads=1, knn=32,
-                 num_r_gaussian=20, edge_feat_dim=4, num_node_types=8, act_fn='relu', norm=True,
-                 cutoff_mode='global', ew_net_type='r',
-                 num_init_x2h=1, num_init_h2x=0, num_x2h=1, num_h2x=1, r_max=10., x2h_out_fc=True, sync_twoup=False,
-                 global_node_num=10,ligand_v_dim=9):
+                 num_r_gaussian=20, edge_feat_dim=4, num_node_types=8,
+                 act_fn='relu', norm=True, cutoff_mode='global',
+                 ew_net_type='r', num_init_x2h=1, num_init_h2x=0, num_x2h=1,
+                 num_h2x=1, r_max=10., x2h_out_fc=True, sync_twoup=False,
+                 global_node_num=10, ligand_v_dim=9):
         super().__init__()
 
         self.hidden_dim = hidden_dim
         self.global_node_num = global_node_num
-        self.ligand_v_dim=ligand_v_dim
-        self.input_adaptor=MLP(in_dim=ligand_v_dim, out_dim=hidden_dim, hidden_dim=hidden_dim, num_layer=2, norm=True, act_fn='relu', act_last=False)
+        self.ligand_v_dimv = ligand_v_dim
+        self.input_adaptor = MLP(in_dim=ligand_v_dim,
+                                 out_dim=hidden_dim,
+                                 hidden_dim=hidden_dim,
+                                 num_layer=2,
+                                 norm=True,
+                                 act_fn='relu',
+                                 act_last=False
+                                 )
         self.unet = UniTransformerO2TwoUpdateGeneral(
             num_blocks=num_blocks,
             num_layers=num_layers,
@@ -40,7 +49,7 @@ class Encoder(nn.Module):
             x2h_out_fc=x2h_out_fc,
             sync_twoup=sync_twoup
             )
-    
+
         # learnable global_h layer
         self.global_h = nn.Parameter(torch.randn(self.global_node_num, self.hidden_dim))
         nn.init.normal_(self.global_h, mean=0, std=0.1) 
@@ -88,8 +97,8 @@ class Encoder(nn.Module):
 
         # Update h and x using the network
         # ligand_v_dim → hidden_dim
-        h=self.input_adaptor(h)
-        global_h=self.global_h.repeat(batch_size, 1)
+        h = self.input_adaptor(h)
+        global_h = self.global_h.repeat(batch_size, 1)
         h_new = torch.cat([h, global_h], dim=0)
         # print("#####################GNN#################")
         # print(f'h_new:{h_new}')

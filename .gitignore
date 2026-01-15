@@ -4,5 +4,10 @@
 /csd_ensembles
 /miniconda
 /output.mol2
+
+# Data
 data/
+
+# Caching
+*:Zone.Identifier
 *.pyc
