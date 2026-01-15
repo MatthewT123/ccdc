@@ -4,3 +4,7 @@
 /csd_ensembles
 /miniconda
 /output.mol2
+utils/__pycache__/visualize.cpython-312.pyc
+psi.*
+environment_psi4.yml
+requirements_psi4.txt
