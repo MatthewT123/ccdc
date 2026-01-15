@@ -8,3 +8,6 @@ utils/__pycache__/visualize.cpython-312.pyc
 psi.*
 environment_psi4.yml
 requirements_psi4.txt
+
+data/
+*.pyc
