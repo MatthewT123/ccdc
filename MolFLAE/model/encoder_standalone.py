@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from model.uni_transformer import UniTransformerO2TwoUpdateGeneral
+from model.train_loop import center_pos
 
 from utils.config import load_config
 
@@ -189,4 +191,74 @@ NONLINEARITIES = {
 }
 
 
+def molecule_to_latent(encoder, mol_entry, return_numpy=False):
+    """
+    Compute latent representation (Zh, Zx) for a single molecule entry from mol_1000.
+
+    Args:
+        encoder: the trained encoder component of the model with an `encode(one_hot_h, x, batch_ligand, deterministic=True)` method.
+               Model should be in eval() mode (this function will not call model.eval() automatically).
+               The function will detect device from model parameters (next(model.parameters()).device).
+        mol_entry: dict-like containing at least:
+                   - 'h': tensor of atom types (integers or torch tensors)
+                   - 'x': tensor of shape (N, 3) with coordinates
+                   - 'atom_num': integer (optional)
+        return_numpy: if True, returns numpy arrays (Zh_cpu, Zx_cpu, global_batch_cpu). Default False.
+
+    Returns:
+        Zh, Zx, global_batch  (either torch tensors on model device or numpy arrays if return_numpy=True)
+    """
+    # load the config   
+    cfg = load_config("config.yaml")
+
+    # detect device from model (fallback to cpu)
+    try:
+        device = next(encoder.parameters()).device
+    except StopIteration:
+        device = torch.device("cpu")
+
+    # pull data
+    h = mol_entry['h']  # expect 1D tensor-like of atom types 
+    x = mol_entry['x']  # expect shape (N, 3)
+
+    # Ensure tensors and move to device
+    x = x.to(device)
+    # Convert h to torch.LongTensor on device. If h is already tensor, make sure it's long.
+    if not isinstance(h, torch.Tensor):
+        h = torch.tensor(h, dtype=torch.long, device=device)
+    else:
+        h = h.to(device).long()
+
+    # Chech if atom types should be mapped to indices
+    needs_mapping = False
+    K = cfg['encoder_config']['ligand_v_dim']
+    if h.max().item() >= K:  # likely not indices
+        needs_mapping = True
+
+    if needs_mapping:
+        h = torch.tensor([MAP_ATOM_TYPE_ONLY_TO_INDEX[int(i.item())] for i in h], dtype=torch.long, device=device)
+
+    # One-hot encode using encoder ligand dim K
+    one_hot_h = F.one_hot(h, num_classes=K).float().to(device)
+
+    # Build a batch vector for a single molecule: all zeros
+    batch_ligand = torch.zeros_like(h, dtype=torch.long, device=device)
+
+    # Center positions
+    x_centered, _ = center_pos(x, batch_ligand, mode=True)
+
+    # Encode into latent space
+    model_device_before = device
+    encoder.eval()
+    with torch.no_grad():
+        Zh, Zx, global_batch, Zh_kl_loss, Zx_kl_loss = encoder.encode(one_hot_h, x_centered, batch_ligand, deterministic=True)
         
+    if return_numpy:
+        Zh_cpu = Zh.cpu().numpy()
+        Zx_cpu = Zx.cpu().numpy()
+        global_batch_cpu = global_batch.cpu().numpy()
+        return Zh_cpu, Zx_cpu, global_batch_cpu
+
+    return Zh, Zx, global_batch
+
+
