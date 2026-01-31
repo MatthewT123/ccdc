@@ -845,7 +845,7 @@ class BFN_charge(BFNBase):
             self.unio2net = UniTransformerO2TwoUpdateGeneral(**unio_args)
         else:
             raise NotImplementedError
-        
+
         self.hidden_dim = net_config.hidden_dim
         self.num_classes = ligand_atom_feature_dim
 
@@ -941,7 +941,7 @@ class BFN_charge(BFNBase):
 
         # Prepare ligand feature input
         init_ligand_v = theta_h_t
-        if self.time_emb_dim > 0: # Time embedding [simple, sin, rbf, learn]
+        if self.time_emb_dim > 0:  # Time embedding [simple, sin, rbf, learn]
             time_emb = self.time_emb_layer(time)
             input_ligand_feat = torch.cat([init_ligand_v, time_emb], -1)
         else:
@@ -1014,7 +1014,7 @@ class BFN_charge(BFNBase):
             p0_h = torch.cat((p0_1, p0_2), dim=-1)  #
         else:
             p0_h = torch.nn.functional.softmax(final_ligand_v, dim=-1)  # [N_ligand, 13]
-    
+
         return coord_pred, p0_h, k_hat
 
     def reconstruction_loss_one_step(
@@ -1117,7 +1117,7 @@ class BFN_charge(BFNBase):
                 p_0=p0_h,
                 K=K,
                 segment_ids=batch_ligand,
-            )    
+            )
 
         if self.include_charge:
             node_mse = F.mse_loss(k_hat, ligand_charges, reduction='none').mean(dim=-1)  # [N_ligand]
