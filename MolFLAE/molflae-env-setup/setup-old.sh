@@ -124,3 +124,19 @@ EOF
 
 # Additional installs 
 conda install -y -c conda-forge absl-py fire ipykernel
+
+# Install pyg-lib
+conda activate MolFLAE2
+
+python -m pip install --no-cache-dir --force-reinstall \
+  pyg-lib \
+  -f https://data.pyg.org/whl/torch-2.12.0+cpu.html 
+
+# Verify install
+python - << 'EOF'
+import torch
+import torch_geometric
+print("torch:", torch.__version__)
+print("pyg:", torch_geometric.__version__)
+print("WITH_KNN available:", torch_geometric.typing.WITH_KNN)
+EOF
