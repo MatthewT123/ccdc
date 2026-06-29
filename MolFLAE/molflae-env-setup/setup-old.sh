@@ -16,7 +16,10 @@ conda install -c conda-forge \
   -y
 
 # Step 2: Install PyTorch via pip (uses OpenBLAS from conda)
-pip install torch torchvision torchaudio \
+pip install \
+  torch==2.12.0 \
+  torchvision==0.27.0 \
+  torchaudio==2.12.0 \
   --index-url https://download.pytorch.org/whl/cpu
 
 # Step 3: CRITICAL - Set library path to avoid segfault
@@ -53,21 +56,25 @@ conda install -c conda-forge rdkit=2023.09.5 openbabel=3.1.1 -y
 # Install PyG
 # make sure pip build uses the active env
 export PIP_NO_BUILD_ISOLATION=1
-python -m pip install -U pip setuptools wheel
+python -m pip install -U pip "setuptools<82" wheel
 
 # install the compiled extension wheels for torch 2.9.1 (CPU)
 python -m pip install --no-deps --no-build-isolation \
   torch-scatter torch-sparse torch-cluster torch-spline-conv \
-  -f https://data.pyg.org/whl/torch-2.9.1+cpu.html
+  -f https://data.pyg.org/whl/torch-2.12.0+cpu.html
 
 # then install the high-level package
 python -m pip install torch-geometric
 
 # Test PyG
 python << 'EOF'
+import torch
 import torch_geometric
 import torch_scatter
 import torch_sparse
+
+print("Torch:", torch.__version__)
+print("PyG:", torch_geometric.__version__)
 print("✓ PyG working")
 EOF
 
