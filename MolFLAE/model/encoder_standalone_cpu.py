@@ -206,7 +206,7 @@ def molecule_to_latent(encoder, mol_entry, return_numpy=False):
     Returns:
         Zh, Zx, global_batch  (either torch tensors on model device or numpy arrays if return_numpy=True)
     """
-    # load the config   
+    # load the config
     cfg = load_config("config.yaml")
 
     # detect device from model (fallback to cpu)
