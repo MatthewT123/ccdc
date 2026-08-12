@@ -156,7 +156,7 @@ class BFN4SBDDScoreModel(BFNBase):
             self.unio2net = UniTransformerO2TwoUpdateGeneral(**net_config.todict())
         else:
             raise NotImplementedError
-        
+
         self.hidden_dim = net_config.hidden_dim
         self.num_classes = ligand_atom_feature_dim
 
@@ -232,13 +232,13 @@ class BFN4SBDDScoreModel(BFNBase):
 
         # Prepare ligand feature input
         init_ligand_v = theta_h_t
-        if self.time_emb_dim > 0: # Time embedding [simple, sin, rbf, learn]
+        if self.time_emb_dim > 0:  # Time embedding [simple, sin, rbf, learn]
             time_emb = self.time_emb_layer(time)
             input_ligand_feat = torch.cat([init_ligand_v, time_emb], -1)
         else:
             input_ligand_feat = init_ligand_v
 
-        # Project protein and ligand feature into hidden embedding space 
+        # Project protein and ligand feature into hidden embedding space
         h_protein = self.protein_atom_emb(protein_v)  # [N_protein, self.hidden_dim - 1]
         init_ligand_h = self.ligand_atom_emb(input_ligand_feat)  # [N_ligand, self.hidden_dim - 1]
 
@@ -291,7 +291,7 @@ class BFN4SBDDScoreModel(BFNBase):
                 time < self.t_min, torch.zeros_like(mu_pos_t), coord_pred
             )
         else:
-            coord_pred = final_ligand_pos # add destination prediction
+            coord_pred = final_ligand_pos  # add destination prediction
 
         k_hat = torch.zeros_like(mu_pos_t)  # TODO: here we close the
 
@@ -638,7 +638,7 @@ class BFN4SBDDScoreModel(BFNBase):
                 theta_h_t = theta_prime / theta_prime.sum(dim=-1, keepdim=True)
 
             elif "end_back" in self.sampling_strategy:
-                t = torch.ones((n_nodes, 1)).to(self.device) * i  / sample_steps #next time step
+                t = torch.ones((n_nodes, 1)).to(self.device) * i / sample_steps  # next time step
                 t = t[batch_ligand]
                 if self.sampling_strategy == "end_back":
                     theta_h_t = self.discrete_var_bayesian_update(t, beta1=self.beta1, x=sample_pred, K=K)
@@ -654,16 +654,15 @@ class BFN4SBDDScoreModel(BFNBase):
                 sample_traj.append((coord_pred, sample_pred, k_hat))
 
                 # if i % (sample_steps // 10) == 0:
-                    # print(f"theta_h_{i}", theta_h_t)
-                    # mu_pos_t size [N,3]
-                    # print(f"mu_pos_{i}_min", mu_pos_t.min(dim=0).values.cpu().numpy(), "max", mu_pos_t.max(dim=0).values.cpu().numpy())
-                    # log to wandb
-                    # wandb.log({"mu_pos_t": mu_pos_t})
-
+                #     print(f"theta_h_{i}", theta_h_t)
+                #     mu_pos_t size [N,3]
+                #     print(f"mu_pos_{i}_min", mu_pos_t.min(dim=0).values.cpu().numpy(), "max", mu_pos_t.max(dim=0).values.cpu().numpy())
+                #     log to wandb
+                #     wandb.log({"mu_pos_t": mu_pos_t})
 
             else:
                 raise NotImplementedError
-            
+
             # update of the discretised variable
             # TODO: charge
             # if self.include_charge:
@@ -836,7 +835,7 @@ class BFN_charge(BFNBase):
                 "charge_loss_weight",
                 "field_loss_weight",
                 "total_charge_weight",
-                "smear_sigma", 
+                "smear_sigma",
                 "name",
             ]:
                 unio_args.pop(_k, None)
@@ -887,7 +886,7 @@ class BFN_charge(BFNBase):
         self.destination_prediction = destination_prediction
         self.sampling_strategy = sampling_strategy
 
-        # Charge-related config 
+        # Charge-related config
         self.include_charge = net_config.include_charge  # master switch
         self.charge_discretised_loss = net_config.charge_discretised_loss  # false by default
         self.sigma1_charges = torch.tensor(
@@ -895,7 +894,7 @@ class BFN_charge(BFNBase):
             dtype=torch.float32,
             device=self.device)
         self.charge_loss_weight = net_config.charge_loss_weight  # lambda_q
-        self.field_loss_weight = net_config.field_loss_weight  # lambda_field 
+        self.field_loss_weight = net_config.field_loss_weight  # lambda_field
         self.total_charge_weight = net_config.total_charge_weight  # lambda_totalCharge (penalty)
         self.smear_sigma = net_config.smear_sigma  # gaussian smearing for ESP (Å)
 
@@ -910,8 +909,8 @@ class BFN_charge(BFNBase):
     def interdependency_modeling(
         self,
         time,
-        protein_pos,  
-        protein_v, 
+        protein_pos,
+        protein_v,
         batch_protein,  # index for protein
         theta_h_t,
         mu_pos_t,
@@ -999,7 +998,7 @@ class BFN_charge(BFNBase):
         # Charge prediction: continuous per-atom scalar
         if self.include_charge:
             charge_raw = self.charge_head(final_ligand_h)   # [N_ligand, self.hidden_dim] -> [N_ligand, 1]
-            k_hat = torch.tanh(charge_raw) * 2  # bound in [-2, 2] 
+            k_hat = torch.tanh(charge_raw) * 2  # bound in [-2, 2]
         else:
             k_hat = torch.zeros((mu_pos_t.shape[0], 1), device=mu_pos_t.device)
 
@@ -1123,7 +1122,7 @@ class BFN_charge(BFNBase):
             node_mse = F.mse_loss(k_hat, ligand_charges, reduction='none').mean(dim=-1)  # [N_ligand]
 
             # Reduce per-molecule:
-            discretized_loss = segment_mean(node_mse, batch_ligand) 
+            discretized_loss = segment_mean(node_mse, batch_ligand)
             # Multiply by weight and return
             discretized_loss = discretized_loss * self.charge_loss_weight
 
@@ -1217,7 +1216,7 @@ class BFN_charge(BFNBase):
                 batch_protein=batch_protein,
                 batch_ligand=batch_ligand,
                 theta_h_t=theta_h_t,
-                mu_pos_t=mu_pos_t,  
+                mu_pos_t=mu_pos_t,
                 gamma_coord=gamma_coord,
             )
 
@@ -1287,18 +1286,18 @@ class BFN_charge(BFNBase):
                 # charge update (continuous)
                 if self.include_charge and not self.charge_discretised_loss:
                     alpha_charge = torch.pow(self.sigma1_charges, -2 * i / sample_steps) * (1 - torch.pow(self.sigma1_charges, 2 / sample_steps))
-                    
+
                     # make alpha_charge a device tensor (broadcastable)
                     if not torch.is_tensor(alpha_charge):
                         alpha_charge = torch.tensor(alpha_charge, device=self.device)
 
                     # noisy observation around predicted charge
                     y_charge = k_hat + torch.randn_like(k_hat) * torch.sqrt(1.0 / alpha_charge)
-                    
+
                     # Bayesian update for charges
                     mu_charge_t = (ro_charge * mu_charge_t + alpha_charge * y_charge) / (ro_charge + alpha_charge)
                     ro_charge = ro_charge + alpha_charge
-                    
+
                 if self.include_charge:
                     # 4-tuple when charges are enabled
                     sample_traj.append((coord_pred, sample_pred, k_hat, mu_charge_t))
@@ -1328,12 +1327,12 @@ class BFN_charge(BFNBase):
                 else:
                     raise NotImplementedError(f"sampling strategy {self.sampling_strategy} not implemented")
 
-                # Update continuous coordinate posterior 
+                # Update continuous coordinate posterior
                 mu_pos_t = self.continuous_var_bayesian_update(
                     t_next, sigma1=self.sigma1_coord, x=coord_pred
                 )[0]
 
-                # Update continuous charge posterior 
+                # Update continuous charge posterior
                 if self.include_charge and not self.charge_discretised_loss:
                     # Ensure k_hat has shape [N_ligand, 1]
                     if k_hat is not None and k_hat.dim() == 1:
@@ -1380,7 +1379,7 @@ class BFN_charge(BFNBase):
         k_final = p0_h_final
         # k_final = torch.distributions.Categorical(p0_h_final).sample()
         # k_final = F.one_hot(k_final, num_classes=K)
-        
+
         if self.include_charge:
             sample_traj.append((mu_pos_final, k_final, k_hat_final, mu_charge_t))
         else:

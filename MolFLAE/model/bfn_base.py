@@ -167,7 +167,7 @@ class BFNBase(nn.Module):
         alpha = beta1 * (2 * i - 1) / N**2  # [D]
         alpha = alpha.view(-1, 1) # [D, 1]
         classes = torch.arange(K, device=target_x.device).long().unsqueeze(0)  # [ 1, K]
-        e_x = F.one_hot(classes.long(), K) #[1,K, K]
+        e_x = F.one_hot(classes.long(), K)  #[1,K, K]
         # print(e_x.shape)
         receiver_components = dist.Independent(
             dist.Normal(
