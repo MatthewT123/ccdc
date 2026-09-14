@@ -325,7 +325,9 @@ with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
 decoded atoms, and plots reference versus predicted charges (both latent-only and
 supplied-geometry predictions). Edit the first code cell to change IDs, checkpoint,
 or device. Original bonds are shown; the decoder does not predict bonds. The notebook
-preserves the full reference-charge range and flags the known label-quality problem.
+shows an automatically zoomed charge comparison with a separate full-range panel
+and flags the known label-quality problem. Set `CHARGE_YLIM` in the plotting cell
+to choose an explicit zoom range.
 It saves PNG figures and matched numerical predictions in a fresh ignored
 `runs/reconstruction-inspection-*` directory. It does not run Psi4 or training.
 
