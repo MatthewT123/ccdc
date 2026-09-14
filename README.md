@@ -284,7 +284,8 @@ missing backbone weights rather than silently training from scratch. By default
 all model parameters are fine-tuned. `--trainable head` freezes everything except
 the new charge head. The training objective is the existing notebook's
 `TrainLoopCharges.training_step`: reconstruction, charge, and KL losses. W&B
-uploads are disabled. This script bypasses unfinished notebook dataset and
+uploads are disabled by default; enable them with `--wandb online` (or save locally
+with `--wandb offline`). This script bypasses unfinished notebook dataset and
 validation plumbing without modifying those notebooks.
 
 Training uses heavy atoms with bonded hydrogen charges absorbed into them, preserving
@@ -306,12 +307,86 @@ The output directory contains:
 
 - `best.ckpt`: lowest validation MAE, or lowest training loss if validation is disabled.
 - `last.ckpt`: final epoch, including weights, config, optimizer state, and provenance.
-- `metrics.jsonl`: per-epoch training loss and validation charge MAE/RMSE.
+- `metrics.jsonl`: per-epoch loss components, charge diagnostics, timing, and CUDA memory.
+- `steps.jsonl`: optimizer-step losses, learning rate, and gradient norm.
+- `before.json`, `after.json`: fixed-seed diagnostics before and after fine-tuning.
+- `wandb.json`: run URL and ID when tracking is enabled.
 - `run.json`, `config.json`, `result.json`: data/checkpoint hashes, split IDs, settings,
   weight-loading report, and completion status.
 
 Passing a fine-tuned checkpoint back via `--checkpoint` starts another fine-tuning
 run with a new optimizer; it is not an exact optimizer/RNG resume operation.
+
+### Track reconstruction and charges with W&B
+
+Authenticate with `pixi run -e ml-gpu wandb login`, then add `--wandb online`.
+Use `--wandb-project` and `--wandb-entity` to choose the destination; never put an
+API key in source code. `--wandb-run-id` resumes tracking only, not training state.
+Metrics are saved locally even when W&B is disabled.
+
+For the local pilot, existing validated Psi4/RESP labels were reused for 200
+molecules from the original training pool. The smallest 200 successfully labelled
+molecules were shuffled with seed 42 into 100 train and 100 test molecules;
+`runs/csd-pilot-100x100/selection.json` records the selection. The original fixed
+100-molecule evaluation set remains untouched. This pilot is selected from
+successful calculations and is not a representative benchmark of the whole CSD.
+
+```bash
+pixi run -e ml-gpu finetune \
+  --sdf runs/csd-pilot-100x100/train/sdf \
+  --charges runs/csd-pilot-100x100/train/charges/charges.npz \
+  --test-sdf runs/csd-pilot-100x100/test/sdf \
+  --test-charges runs/csd-pilot-100x100/test/charges/charges.npz \
+  --output runs/pilot-next-run --device cuda:0 \
+  --epochs 1 --batch-size 8 --val-fraction 0 \
+  --reconstruction-molecules 100 --sample-steps 100 --wandb online
+```
+
+Use a fresh output directory. Separate test inputs are optional, must have reference
+labels, and are rejected if they overlap training by connectivity or refcode family.
+Test data never contributes gradients or checkpoint selection. No Psi4 calculation
+is launched by fine-tuning; it consumes existing labels.
+
+W&B `train_*` metrics show optimizer-step losses. `before_*` and `epoch_diagnostics_*`
+record training/test diagnostics; final `after_*` values appear in the run summary.
+`evaluation_*` metrics share an `evaluation_epoch` axis for before/after curves.
+`epoch_performance_*` reports optimizer-epoch seconds, molecules/second, and peak
+PyTorch allocated/reserved GiB. These memory figures exclude other applications and
+CUDA allocations outside PyTorch; epoch time excludes before/after diagnostics.
+
+- `given_geometry_charges`: deterministic charge predictions at decoder time 1
+  with supplied atom types and positions. MAE/RMSE are in elementary-charge units
+  (`e`), using heavy-atom charges with bonded H charges absorbed.
+- `latent_only` / `test_latent_only`: decode from latent representations with the
+  atom count supplied, without supplying original types or coordinates to the
+  decoder. A position-based Hungarian assignment in the centered encoder frame
+  gives atom-type accuracy, position RMSE in angstroms, and matched charge errors.
+  This does not measure bond accuracy or prediction of the atom count.
+- `charge_loss` is the weighted sum of molecule-averaged atomic MSE and molecular
+  total-charge MSE. It is not itself charge RMSE. For plain atomic MSE, 0.01, 0.0025,
+  and 0.0004 e² correspond to RMSE 0.10, 0.05, and 0.02 e respectively. Compare with
+  the logged zero-charge baseline; an acceptable error depends on the downstream use.
+- Coordinate/type losses retain the original stochastic BFN objective. The existing
+  position KL expression omits a fixed prior-normalization constant, so the logged
+  KL component can be negative; its absolute value is not a reconstruction score.
+
+For future label generation, `scripts/batch_resp.py --sdf ... --output ...` runs
+four independent molecule jobs by default (`--workers` changes this). `--resume`
+reuses validated completed attempts in that output directory. `--precise-fit`
+uses a dense least-squares RESP solve for small systems, checks linear residuals,
+and rejects unconverged fits; it retains the original fitting objective. This
+avoids inaccurate solutions from PsiRESP's default singular-matrix fallback.
+Inspect `status.csv`: failures are preserved for diagnosis, and a nonzero exit
+means the label set is incomplete. In particular, the default PsiRESP ESP-grid
+radii do not support Br; those failed jobs are excluded from this cached pilot.
+
+The completed 100/100 pilot exposed a label-quality problem: absorbed reference
+charges reach 39.29 e in training and 37.84 e in testing, while the charge head is
+bounded to ±2 e. Hash alignment, convergence, and molecular charge conservation
+passed, but those checks do not establish scientifically usable labels. Preserve
+these results for diagnosis; audit the RESP calculation/fitting pipeline before
+using this label set for further accuracy experiments. No labels were clipped or
+removed after inspecting test results.
 
 ### Verification
 

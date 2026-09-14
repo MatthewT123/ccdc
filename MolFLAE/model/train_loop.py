@@ -826,27 +826,41 @@ class TrainLoopCharges(pl.LightningModule):
             + self.cfg['train']['kl_loss']['kl_loss_weight'] * kl_loss
         )
 
+        # Expose components without changing the objective or checkpoint keys.
+        self.last_loss_metrics = {
+            'loss': loss.detach().item(),
+            'coordinate_loss': c_loss.mean().detach().item(),
+            'atom_type_loss': d_loss.mean().detach().item(),
+            'structure_loss': (self.cfg['train']['recon_loss']['c_loss_weight'] * c_loss
+                + self.cfg['train']['recon_loss']['d_loss_weight'] * d_loss).mean().detach().item(),
+            'charge_loss': discretised_loss.mean().detach().item(),
+            'kl_loss': kl_loss.detach().item(),
+            **self.decoder.last_charge_metrics,
+        }
+
         # logging to W&B and Lightning
-        wandb.log({
-            'lr': self.get_last_lr(),
-            'train_loss': loss.item(),
-            'train_recon_loss': recon_loss.item(),
-            'train_kl_loss': kl_loss.item()
-        })
+        if not getattr(self, "external_logging", False):
+            wandb.log({
+                'lr': self.get_last_lr(),
+                'train_loss': loss.item(),
+                'train_recon_loss': recon_loss.item(),
+                'train_kl_loss': kl_loss.item()
+            })
 
         t5 = time()
 
-        self.log_dict(
-            {
-                'lr': self.get_last_lr(),
-                'train_loss': loss.item(),
-                'recon_loss': recon_loss.item(),
-                'kl_loss': kl_loss.item()
-            },
-            on_step=True,
-            prog_bar=True,
-            batch_size=self.cfg['train']['batch_size'],
-        )
+        if self._trainer is not None:
+            self.log_dict(
+                {
+                    'lr': self.get_last_lr(),
+                    'train_loss': loss.item(),
+                    'recon_loss': recon_loss.item(),
+                    'kl_loss': kl_loss.item()
+                },
+                on_step=True,
+                prog_bar=True,
+                batch_size=self.cfg['train']['batch_size'],
+            )
 
         # skip updates when loss is not finite
         if not torch.isfinite(loss):

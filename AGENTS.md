@@ -101,6 +101,10 @@ The CLI now selects multiprocessing `spawn` and defaults to one ESP worker (`--n
 
 # Known prototype gaps and validation
 
+- W&B is optional in `scripts/finetune.py` (`--wandb online|offline|disabled`, default disabled). Explicit `--test-sdf`/`--test-charges` are held out from gradients and checkpoint selection. Metrics distinguish supplied-geometry charge errors from latent-only structure/charge decoding with atom count supplied.
+- Completed pilot (2026-09-14): `runs/csd-pilot-100x100-epoch1`, W&B `unoxford/ccdc-molflae/1mjrhc11`. Cached labels split into 100 train / 100 test from the original training pool; original eval untouched. One RTX 5090 epoch, 13 updates, 0.742 s optimizer time, 0.627 GiB peak PyTorch allocated, about 54 s including diagnostics. All 100 test molecules evaluated before/after; test charge RMSE 4.128 -> 4.125 e, latent position RMSE 0.724 -> 0.730 A, atom accuracy 91.0% -> 89.2%.
+- Critical label audit: cached precise RESP results passed provenance, finite values, convergence and sum checks but heavy-atom reference charges reach 39.29 e (train) / 37.84 e (test), incompatible with the ±2 e head. This pilot is a diagnostic, not validated chemical accuracy. See `label_audit.json` and W&B notes. Do not claim the labels are scientifically validated or continue training on them without investigating. Preserve originals; no clipping or post-test filtering was applied. Default PsiRESP grid radii also lack Br, causing failed label jobs. `--precise-fit` improves numerical constraint solves but does not establish chemical quality.
+
 Verified by source inspection; recheck before relying on these observations after changes:
 
 - `RDKitChargeDataset` stores `self.charge_arrays` but reads `self.charges` in `get()`, and emits `charge_arrays` rather than the training wrapper's required `charges` field.

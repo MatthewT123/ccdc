@@ -1138,8 +1138,13 @@ class BFN_charge(BFNBase):
             q_true_sum = segment_sum(ligand_charges.squeeze(-1), batch_ligand)
             total_charge_err = (q_pred_sum - q_true_sum) ** 2
             discretized_loss = discretized_loss + self.total_charge_weight * total_charge_err
+            self.last_charge_metrics = {
+                'charge_mse_per_molecule': segment_mean(node_mse, batch_ligand).mean().detach().item(),
+                'total_charge_mse': total_charge_err.mean().detach().item(),
+            }
         else:
             discretized_loss = torch.zeros_like(closs)
+            self.last_charge_metrics = {'charge_mse_per_molecule': 0.0, 'total_charge_mse': 0.0}
 
         return closs, dloss, discretized_loss
 

@@ -6,6 +6,7 @@ import json
 import logging
 import multiprocessing
 import os
+from contextlib import nullcontext
 from pathlib import Path
 import sys
 
@@ -25,6 +26,7 @@ def main(argv=None):
     parser.add_argument("--max-iterations", type=int, default=3)
     parser.add_argument("--n-processes", type=int, default=1)
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--precise-fit", action="store_true", help="Accurate small-system RESP linear solves; reject unconverged fits")
     args = parser.parse_args(argv)
     if args.max_iterations < 1 or args.n_processes < 1:
         parser.error("Iterations and process count must be positive")
@@ -40,8 +42,10 @@ def main(argv=None):
     for identifier, source, mol in records:
         try:
             record = ConformerRecord(identifier, mol, mol.GetNumConformers())
-            q = np.asarray(RespCalculation(record, output / "work",
-                max_iterations=args.max_iterations, n_processes=args.n_processes).run_to_completion())
+            from _workflow.resp_solver import precise_resp_solver
+            with precise_resp_solver() if args.precise_fit else nullcontext():
+                q = np.asarray(RespCalculation(record, output / "work",
+                    max_iterations=args.max_iterations, n_processes=args.n_processes).run_to_completion())
             if q.shape != (mol.GetNumAtoms(),) or not np.isfinite(q).all():
                 raise ValueError("Invalid charge count or non-finite charges")
             total = Chem.GetFormalCharge(mol)
@@ -50,6 +54,7 @@ def main(argv=None):
             atoms = atom_metadata(mol)
             arrays[identifier] = q
             metadata[identifier] = {"source_sdf": str(source), "source_sha256": digest(source), **atoms}
+            metadata[identifier]['resp_solver'] = 'dense_lstsq_rcond_1e-14' if args.precise_fit else 'psiresp_default'
             rows.append({"CSD_identifier": identifier, "smiles": Chem.MolToSmiles(mol),
                          "charges": json.dumps(q.tolist()), "atom_indices": json.dumps(atoms["atom_indices"])})
             statuses.append({"identifier": identifier, "status": "ok", "message": ""})
