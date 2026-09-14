@@ -145,10 +145,89 @@ runs/ccdc-api-env/bin/python scripts/retrieve_structures.py \
   --csv molecules.csv --output runs/csd-structures
 ```
 
-Locally, licence checking and reading the included SDF succeeded (40 atoms, 41 bonds).
-Database retrieval still reports `CSDNotFoundException`: the wheel does not contain
-the CSD database. A licence error and a missing-database error require different fixes.
-If activation fails, check the key's current entitlement with CCDC.
+Licence checking and reading the included SDF succeeded (40 atoms, 41 bonds).
+The wheel does not contain the CSD database. A licence error and a missing-database
+error require different fixes. If activation fails, check the key's current
+entitlement with CCDC.
+
+#### Minimal database installation
+
+The online installer supports selecting just **CSD Main Data**, including its
+updates, rather than the full software/data portfolio:
+
+```bash
+# Obtain the installer privately from the CCDC portal; keep its URL out of Git.
+chmod u+x runs/downloads/CSDInstallerOnline-2026.1.1-linux
+QT_QPA_PLATFORM=offscreen runs/downloads/CSDInstallerOnline-2026.1.1-linux search
+QT_QPA_PLATFORM=offscreen runs/downloads/CSDInstallerOnline-2026.1.1-linux \
+  --root "$PWD/runs/csd-install" --accept-licenses \
+  install uk.ac.cam.ccdc.data.csd
+```
+
+The inspected catalogue requires approximately **9.95 GB installed plus 3.57 GB
+temporary space** for this selection. It includes the maintenance tool and main
+data updates, but not Mogul, IsoStar, CrossMiner, or the desktop applications.
+These sizes can change with database releases. Keep the installation under ignored
+`runs/`; do not commit or redistribute database files.
+
+On Linux the API reads the data location from `~/.config/CCDC/CSD.ini`. Its
+`[General]` section should point `root` to the absolute `ccdc-data` directory
+inside your installation. Preserve existing settings when changing it. See
+[CCDC custom installation instructions](https://support.ccdc.cam.ac.uk/support/solutions/articles/103000306299).
+
+#### Fixed starter train/eval dataset
+
+After database installation, run:
+
+```bash
+runs/ccdc-api-env/bin/python scripts/create_csd_dataset.py \
+  --output runs/csd-small-v1 --train-size 1000 --eval-size 100 --seed 42
+```
+
+This creates `train/sdf/`, `eval/sdf/`, identifier lists `train.csv` and `eval.csv`,
+and a manifest recording the database version, selection rules, IDs, and file hashes.
+Outputs must be new directories; keep these files fixed for subsequent experiments.
+Rebuilding against a different database version can select different molecules.
+
+The starter selection uses single-component molecules with 3–10 heavy atoms,
+elements supported by both the model and HF/6-31G* (H, C, N, O, F, P, S, Cl, Br),
+no formally charged atoms or radicals, complete 3D data,
+no disorder or polymers, no isotopic labels, and crystallographic R factor at most 5%.
+RDKit must validate the molecular graph. Heavy-atom separations must be at least
+0.65 times the sum of covalent radii, and bonds at most 1.35 times that sum.
+Halogens must have valence one; nonstandard stereochemistry is excluded. Saving
+and reading the SDF must preserve connectivity and complete explicit hydrogens.
+These are screening checks, not a guarantee of chemical or label accuracy.
+Iodine is excluded: the neural model supports it, but the current Psi4 6-31G*
+basis does not. Basis availability was checked for every retained element.
+Stereo-independent canonical SMILES and CSD refcode families are unique across both
+splits. This prevents identical connectivity/stereoisomers and repeat crystal
+determinations from appearing in both; it is not a scaffold-disjoint benchmark.
+The prepared geometry retains crystal heavy-atom coordinates and regenerates all
+explicit hydrogen coordinates with RDKit. It does not optimize the geometry.
+This differs from the simple largest-component export in `retrieve_structures.py`.
+
+Reserve all 100 evaluation molecules for later testing. Use a validation split
+within the 1,000 training molecules for tuning. Structure export does not calculate
+RESP labels or start model training. To generate training labels separately:
+
+```bash
+pixi run predict-charges --sdf runs/csd-small-v1/train/sdf \
+  --output runs/csd-small-v1-train-charges
+```
+
+The local `runs/csd-small-v1` export contains **1,000 train + 100 eval molecules**,
+all verified by reading their saved SDFs and checking hashes, atom counts, hydrogen
+completeness, and unique connectivity/refcode families. `verification.json` records
+the audit. There are 9 molecules with 3 heavy atoms, 16 with 4, 37 with 5, 61 with 6,
+90 with 7, 189 with 8, 248 with 9, and 450 with 10.
+Earlier drafts are preserved separately; use only the final `csd-small-v1` dataset.
+The final run used seed 42 and the verified candidate list
+`runs/csd-small-basis-candidates.csv` via `--candidates-csv`; its hash is in the
+manifest. This option reapplies all filters to a fixed candidate list.
+A real Psi4/RESP smoke calculation passed on the selected small molecule QOBGUL03,
+with finite, atom-aligned charges summing to its formal charge. The remaining
+dataset still needs reference-charge calculation before training.
 
 ### 2. Calculate reference charges
 
@@ -240,9 +319,11 @@ The three stages were exercised with two local molecules and real Psi4/RESP char
 Two epochs of full-model fine-tuning passed on CPU; head-only fine-tuning passed on
 the RTX 5090. Saved weights confirmed that full-model tuning changed pretrained
 parameters and head-only tuning preserved them. The separate CCDC environment now
-passes API licensing and local molecule reading using the ignored `.env`. Live CSD
-retrieval was attempted and fails because the database is not installed; the CSD
-adapter also has a simulated contract test. All notebooks were left byte-for-byte unchanged.
+passes API licensing and live database access using the ignored `.env` and minimal
+CSD Main Data installation (1,451,367 entries). Retrieval of HXACAN06 passed.
+The original CSV exported 11 of 13 entries: ALESOC failed RDKit valence validation
+and FAFYIZ was absent from the database. The CSD adapter also has a simulated
+contract test. All notebooks were left byte-for-byte unchanged.
 
 ```bash
 pixi run -e ml python -m unittest discover -s tests
