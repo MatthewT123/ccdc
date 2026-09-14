@@ -319,6 +319,16 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 
 ### Track reconstruction and charges with W&B
 
+For visual inspection, open [`notebooks/reconstruction_and_charges.ipynb`](notebooks/reconstruction_and_charges.ipynb)
+with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
+`runs/csd-pilot-100x100-epoch1/last.ckpt`, overlays five fixed test structures with
+decoded atoms, and plots reference versus predicted charges (both latent-only and
+supplied-geometry predictions). Edit the first code cell to change IDs, checkpoint,
+or device. Original bonds are shown; the decoder does not predict bonds. The notebook
+preserves the full reference-charge range and flags the known label-quality problem.
+It saves PNG figures and matched numerical predictions in a fresh ignored
+`runs/reconstruction-inspection-*` directory. It does not run Psi4 or training.
+
 Authenticate with `pixi run -e ml-gpu wandb login`, then add `--wandb online`.
 Use `--wandb-project` and `--wandb-entity` to choose the destination; never put an
 API key in source code. `--wandb-run-id` resumes tracking only, not training state.
