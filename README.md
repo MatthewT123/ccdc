@@ -25,6 +25,44 @@ setup scripts are retained as historical references; use the pixi setup instead.
 The chemistry environment pins libint 2.9 because newer libint releases can
 resolve successfully but lack the shared-library ABI needed by this Psi4 build.
 
+## Download the full pretrained MolFLAE checkpoint
+
+The [official MolFLAE instructions](https://github.com/MuZhao2333/MolFLAE/tree/master/Latent_Experiments)
+link to the pretrained ZINC-9M model on
+[Google Drive](https://drive.google.com/file/d/161pBWbsbkZbN4r57XsuWU6QzYA5nuvAB/view).
+From this repository's root, download it with:
+
+```bash
+mkdir -p MolFLAE/ckpt-zinc9M
+wget --no-clobber --timeout=30 --tries=3 \
+  -O 'MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt' \
+  'https://drive.usercontent.google.com/download?id=161pBWbsbkZbN4r57XsuWU6QzYA5nuvAB&export=download&confirm=t'
+echo '6eb8332e9f2c955fe93197fca54213c2d561e5078067a6c3102f11ce7b9a7f3f  MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt' | sha256sum --check
+```
+
+`--no-clobber` preserves an existing destination. If an interrupted download or a
+Drive error page fails the checksum, move that file aside before retrying. The
+checksum above was calculated from the verified download on 2026-09-14; it is not
+an independently published author checksum. The verified file is 66,892,474 bytes
+(about 64 MiB). Downloaded checkpoints are ignored by Git.
+
+This is a Lightning checkpoint from epoch 24 / global step 145672. Its
+`state_dict` includes the encoder, latent projections, and structural decoder;
+it also contains optimizer/training state. Inspect it without loading arbitrary
+pickled classes using the ML environment:
+
+```bash
+pixi run -e ml python -c "import torch; c = torch.load('MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt', map_location='cpu', weights_only=True); print(c['epoch'], sorted({k.split('.')[0] for k in c['state_dict']}))"
+```
+
+All four files already tracked in `MolFLAE/weights/` exactly match their
+corresponding tensors in this official checkpoint. They provide only the encoder
+and latent projections; the full download also provides decoder weights.
+The official checkpoint does not contain this project's added `charge_head`.
+Downloading it does not change the smoke checks: their training step still
+initializes a new model. Loading pretrained structural weights into the modified
+charge model requires an explicit compatibility check and initialization step.
+
 ## Run small checks
 
 From the repository root:

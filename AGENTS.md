@@ -32,6 +32,7 @@ These are partially connected research workflows, not a packaged application or 
 | `MolFLAE/utils/data_loading.py` | Recursive SDF loader returning atom-type indices, positions, and atom counts; does not load charge labels. |
 | `MolFLAE/config.yaml` | Encoder, decoder, charge losses, training, and evaluation settings. |
 | `MolFLAE/weights/` | Encoder and latent projection weights explicitly loaded by `encoder_test.ipynb`. |
+| `MolFLAE/ckpt-zinc9M/` | Ignored local download of the official full MolFLAE checkpoint; source, wget command, and checksum in `README.md`. |
 
 # Data contracts and scientific assumptions
 
@@ -45,6 +46,7 @@ These are partially connected research workflows, not a packaged application or 
 - The training notebook explores transferring each explicit hydrogen's charge to its bonded heavy atom before removing H. Earlier cells simply drop H. Preserve the intended total-charge convention explicitly.
 - `BFN_charge` predicts per-atom charges bounded by `2 * tanh(...)`; its loss includes per-atom error and a soft molecular total-charge penalty. This does not establish model accuracy or exact charge conservation.
 - `TrainLoopCharges` initializes new encoder/decoder modules; it does not automatically load the checked-in encoder weights.
+- The official checkpoint `MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt` was downloaded and inspected with `torch.load(..., weights_only=True)` on 2026-09-14. It contains `encoder`, `Wh_mu`, `Wh_log_var`, `Wx_log_var`, and `decoder` state (epoch 24, global step 145672), but no added charge head. All four tracked encoder/projection weight files exactly match its corresponding tensors. Do not imply that downloading it enables pretrained training automatically; modified decoder compatibility remains to be checked.
 
 # Environments and execution
 
@@ -57,7 +59,7 @@ These are partially connected research workflows, not a packaged application or 
 - Managed sandbox GPU queries fail here even though the host driver works. Use approved execution outside the sandbox to verify GPU access; do not infer a broken NVIDIA driver from sandboxed `nvidia-smi` alone. GPU setup applies to MolFLAE, not the Psi4/RESP computation.
 - ML environment files are in `MolFLAE/molflae-env-setup/`, targeting `MolFLAE2` and Python 3.10. Review scripts and dependency compatibility before using them: `setup.sh` currently lacks a pip-install command before its PyG extension list.
 - Run root notebooks with the repository root as cwd; run MolFLAE notebooks with `MolFLAE/` as cwd. Imports such as `model.*`, `utils.*`, and relative `config.yaml`/weight paths depend on this. Root and MolFLAE contain different `utils` directories.
-- Notebook paths referencing `/root/ccdc`, Windows scratch folders, or absent `data/latent_experiment/val` and `ckpt-zinc9M` directories are examples, not portable defaults.
+- Notebook paths referencing `/root/ccdc`, Windows scratch folders, or absent `data/latent_experiment/val` directories are examples, not portable defaults. The documented checkpoint download now populates `MolFLAE/ckpt-zinc9M` locally.
 - Do not launch expensive quantum calculations, full training, environment installation, or W&B logging merely to summarize or inspect the project.
 
 Example RESP invocation from the repository root, after activating a suitable environment (not verified by this documentation review):
