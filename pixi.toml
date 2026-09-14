@@ -5,7 +5,8 @@ platforms = ["linux-64"]
 
 [environments]
 default = ["chemistry"]
-ml = ["ml"]
+ml = ["ml", "cpu"]
+ml-gpu = ["ml", "cuda"]
 
 [feature.chemistry.dependencies]
 python = "3.10.*"
@@ -29,10 +30,6 @@ openbabel = "3.1.*"
 ipykernel = "*"
 
 [feature.ml.pypi-dependencies]
-torch = { version = "==2.5.1+cpu", index = "https://download.pytorch.org/whl/cpu" }
-torch-scatter = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_scatter-2.1.2%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
-torch-cluster = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_cluster-1.6.3%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
-torch-geometric = "==2.6.1"
 pytorch-lightning = ">=2.4,<2.6"
 torchdiffeq = "*"
 pyyaml = "*"
@@ -44,9 +41,24 @@ scipy = "*"
 wandb = "*"
 tqdm = "*"
 
+[feature.cpu.pypi-dependencies]
+torch = { version = "==2.5.1+cpu", index = "https://download.pytorch.org/whl/cpu" }
+torch-scatter = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_scatter-2.1.2%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
+torch-cluster = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_cluster-1.6.3%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
+torch-geometric = "==2.6.1"
+
+[feature.cuda.pypi-dependencies]
+torch = { version = "==2.8.0+cu128", index = "https://download.pytorch.org/whl/cu128" }
+torch-scatter = { url = "https://data.pyg.org/whl/torch-2.8.0%2Bcu128/torch_scatter-2.1.2%2Bpt28cu128-cp310-cp310-linux_x86_64.whl" }
+torch-cluster = { url = "https://data.pyg.org/whl/torch-2.8.0%2Bcu128/torch_cluster-1.6.3%2Bpt28cu128-cp310-cp310-linux_x86_64.whl" }
+torch-geometric = "==2.7.0"
+
 [feature.chemistry.tasks]
 resp-help = "python esp_generation.py --help"
 smoke-resp = "python scripts/smoke_resp.py"
 
 [feature.ml.tasks]
 smoke-ml = "python scripts/smoke_ml.py"
+
+[feature.cuda.tasks]
+smoke-gpu = "python scripts/smoke_ml.py --device cuda"

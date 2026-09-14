@@ -1,5 +1,6 @@
-"""Run the checked-in encoder and one CPU charge-training step, without W&B uploads."""
+"""Run the checked-in encoder and one charge-training step, without W&B uploads."""
 
+import argparse
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,12 @@ from utils.data_loading import MAP_ATOM_TYPE_ONLY_TO_INDEX
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    args = parser.parse_args()
+    device = torch.device(args.device)
+    if device.type == "cuda" and not torch.cuda.is_available():
+        parser.error("CUDA is unavailable. Use the ml-gpu environment with GPU access.")
     torch.set_num_threads(2)
     torch.manual_seed(0)
     output_root = ROOT / "runs"
@@ -64,36 +71,44 @@ def main():
         layer = nn.Linear(cfg["encoder_config"]["hidden_dim"], out_dim)
         layer.load_state_dict(torch.load(f"weights/{filename}", map_location="cpu", weights_only=True))
         setattr(encoder, name, layer)
+    encoder.to(device)
     encoder.eval()
     with torch.no_grad():
         zh, zx, graph = molecule_to_latent(encoder, {"h": indices, "x": x})
     assert torch.isfinite(zh).all() and torch.isfinite(zx).all()
-    np.savez_compressed(output / "latent.npz", Zh=zh.numpy(), Zx=zx.numpy(), batch=graph.numpy())
+    assert zh.device.type == device.type and zx.device.type == device.type
+    np.savez_compressed(output / "latent.npz", Zh=zh.cpu().numpy(), Zx=zx.cpu().numpy(), batch=graph.cpu().numpy())
 
     # Exercise the actual training wrapper with correctly aligned example labels.
     batch = Batch.from_data_list([Data(
         h=torch.tensor(numbers, dtype=torch.long).view(-1, 1), x=x, charges=q,
-    )])
+    )]).to(device)
     with wandb.init(mode="disabled"):
-        model = TrainLoopCharges(cfg)
+        cfg["decoder_config_charge"]["device"] = str(device)
+        model = TrainLoopCharges(cfg).to(device)
         model.configure_optimizers()
         model.train()
         model.optim.zero_grad()
         loss = model.training_step(batch, 0)
+        assert loss.device.type == device.type
         assert torch.isfinite(loss)
         loss.backward()
         grads = [p.grad for p in model.decoder.charge_head.parameters()]
-        assert all(g is not None and torch.isfinite(g).all() for g in grads)
+        assert all(g is not None and g.device.type == device.type and torch.isfinite(g).all() for g in grads)
         assert any(torch.count_nonzero(g) for g in grads)
         before = [p.detach().clone() for p in model.decoder.charge_head.parameters()]
         model.optim.step()
         assert any(not torch.equal(a, b) for a, b in zip(before, model.decoder.charge_head.parameters()))
     result = {
-        "torch": torch.__version__, "device": "cpu", "heavy_atoms": len(numbers),
+        "torch": torch.__version__, "device": str(device), "heavy_atoms": len(numbers),
         "total_charge": float(original_total), "Zh_shape": list(zh.shape),
         "Zx_shape": list(zx.shape), "training_loss": float(loss.detach()),
         "charge_head_updated": True, "output": str(output),
     }
+    if device.type == "cuda":
+        torch.cuda.synchronize()
+        result.update(gpu=torch.cuda.get_device_name(device), cuda=torch.version.cuda,
+                      peak_gpu_memory_mb=torch.cuda.max_memory_allocated(device) / 1024**2)
     (output / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     print(json.dumps(result, indent=2))
 

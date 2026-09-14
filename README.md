@@ -8,8 +8,8 @@ See [AGENTS.md](AGENTS.md) for the code map and known prototype limitations.
 ## Local setup (Linux x86-64)
 
 Use [pixi](https://pixi.sh/) for the native chemistry dependencies. The ML
-environment's PyPI dependencies are installed through pixi's uv integration.
-`pixi.lock` records the resolved packages for both environments.
+environments' PyPI dependencies are installed through pixi's uv integration.
+`pixi.lock` records the resolved packages for all environments.
 
 ```bash
 pixi install --locked
@@ -18,7 +18,8 @@ pixi install --locked -e ml
 
 The default environment provides Python 3.10, Psi4, PsiRESP, and RDKit. The `ml`
 environment provides Python 3.10, CPU PyTorch, PyTorch Geometric, RDKit, and
-Open Babel. GPU/CUDA setup is not included. The older exported environment and
+Open Babel. The optional `ml-gpu` environment adds CUDA support (see below).
+The older exported environment and
 setup scripts are retained as historical references; use the pixi setup instead.
 
 The chemistry environment pins libint 2.9 because newer libint releases can
@@ -71,14 +72,47 @@ Both smoke checks passed locally on 2026-09-14. The example molecule yielded
 of about 35.47 for the seeded update. The water charges were approximately
 `[-0.79462, 0.39771, 0.39691]`, summing to zero within floating-point precision.
 
+## Run MolFLAE on an NVIDIA GPU
+
+```bash
+pixi install --locked -e ml-gpu
+pixi run -e ml-gpu smoke-gpu
+```
+
+This environment uses PyTorch 2.8 with CUDA 12.8 and matching PyTorch Geometric
+extensions. CUDA 12.8 builds support Blackwell cards such as the RTX 5090;
+see the [PyTorch Blackwell support announcement](https://pytorch.org/blog/pytorch-2-7/).
+An operational NVIDIA driver is required. The existing `ml` environment remains
+CPU-only; simply selecting `cuda` there will not enable GPU execution.
+
+`smoke-gpu` passes `--device cuda`, moves the encoder, training model, and batch
+onto the GPU, and checks that latents, loss, and gradients actually reside there.
+It fails if CUDA is unavailable. Its `result.json` includes GPU name, CUDA version,
+and peak allocated GPU memory. This remains a one-molecule runtime check rather
+than a throughput benchmark or full training run. The Psi4/RESP task still uses CPU.
+Verified locally on the RTX 5090: encoder forward pass and charge-head optimizer
+update both passed on CUDA, with about 247 MB peak allocated GPU memory.
+
+For GPU notebooks, select `.pixi/envs/ml-gpu/bin/python`. In the training notebook,
+move both model and batches to CUDA and set the decoder's device before construction:
+
+```python
+config["decoder_config_charge"]["device"] = "cuda"
+train_loop = TrainLoopCharges(config).to("cuda")
+train_loop.configure_optimizers()
+batch = batch.to("cuda")
+```
+
+Selecting the GPU kernel alone does not move model tensors or data to CUDA.
+
 ## Notebooks and CSD access
 
-Both environments include `ipykernel`. In your notebook editor, select
+All environments include `ipykernel`. In your notebook editor, select
 `.pixi/envs/default/bin/python` for chemistry or `.pixi/envs/ml/bin/python` for ML.
 Use the repository root as the working directory for root notebooks and
 `MolFLAE/` for its notebooks. Some notebook cells remain unfinished or depend on
 historical paths; a passing smoke check does not establish that Run All works.
 
 The CSD retrieval notebooks additionally require the CCDC Python API and an
-accessible CSD installation/licence. These are not bundled in the two environments.
+accessible CSD installation/licence. These are not bundled in the pixi environments.
 The included SDF lets the chemistry and ML checks run without CSD access.
