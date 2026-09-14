@@ -2,6 +2,7 @@
 
 import csv
 import json
+import os
 from pathlib import Path
 import sys
 import tempfile
@@ -19,6 +20,7 @@ from rdkit.Chem import AllChem
 import retrieve_structures
 from _workflow.data import atom_metadata, digest, load_labels, read_molecule, structures, write_json, write_sdf
 from _workflow.training import molecular_data
+from _workflow.licensing import load_ccdc_license, VARIABLE
 
 
 class WorkflowTests(unittest.TestCase):
@@ -63,7 +65,7 @@ class WorkflowTests(unittest.TestCase):
         source = self.root / "ids.csv"
         source.write_text("Database identifier\nGOOD\nBAD\n")
         output = self.root / "csd"
-        with patch.dict(sys.modules, {"ccdc": fake}):
+        with patch.dict(sys.modules, {"ccdc": fake}), patch.object(retrieve_structures, "load_ccdc_license"):
             code = retrieve_structures.main(["--csv", str(source), "--output", str(output)])
         self.assertEqual(code, 1)
         self.assertEqual([p.name for p in (output / "sdf").glob("*.sdf")], ["GOOD.sdf"])
@@ -108,6 +110,25 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(data.h.flatten().tolist(), [6, 8])
         self.assertTrue(np.allclose(data.charges.flatten().numpy(), expected))
         self.assertAlmostEqual(data.charges.sum().item(), q.sum(), places=6)
+
+    def test_license_loads_only_configuration_and_respects_environment(self):
+        env = self.root / ".env"
+        env.write_text("OTHER_VARIABLE=ignored\nexport CCDC_LICENSING_CONFIGURATION='la-code;test-key' # private\n")
+        with patch.dict(os.environ, {}, clear=True):
+            load_ccdc_license(env)
+            self.assertEqual(os.environ[VARIABLE], "la-code;test-key")
+            self.assertNotIn("OTHER_VARIABLE", os.environ)
+            os.environ[VARIABLE] = "lf-server;https://example.invalid"
+            load_ccdc_license(env)
+            self.assertEqual(os.environ[VARIABLE], "lf-server;https://example.invalid")
+
+    def test_license_errors_do_not_expose_values(self):
+        env = self.root / ".env"
+        for value in ("'la-code;test-secret", "test-secret", "'la-code;YOUR_ACTIVATION_KEY'"):
+            env.write_text(f"{VARIABLE}={value}\n")
+            with patch.dict(os.environ, {}, clear=True), self.assertRaises(ValueError) as caught:
+                load_ccdc_license(env)
+            self.assertNotIn("test-secret", str(caught.exception))
 
 
 if __name__ == "__main__":

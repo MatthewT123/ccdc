@@ -47,6 +47,9 @@ data/
 psiresp_working_directory/*
 
 # Local environments and smoke-run outputs
+.env
+.env.*
+!.env.example
 .pixi/
 .venv/
 /runs/

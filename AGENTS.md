@@ -94,6 +94,7 @@ The CLI now selects multiprocessing `spawn` and defaults to one ESP worker (`--n
 - `python -m unittest discover -s tests -p test_devices.py` passes in both ML environments: device precedence/error checks, schedule/device moves, strict loading of the downloaded full checkpoint into `TrainLoop` when present, and a short charge-decoder sampling pass. Full training and original structural-decoder sampling remain outside this verification.
 - Scripts create unique output directories under ignored `runs/`; environment files live under ignored `.pixi/`. Smoke success writes `result.json`. Do not commit generated outputs.
 - No local CSD installation was found in the usual locations; database retrieval and notebook Run All remain unverified. CCDC API/data/licence are not included in these environments.
+- A separate ignored `runs/ccdc-api-env` now contains the user-supplied CCDC API wheel installed with uv. The private root `.env` contains licensing configuration and must never be printed, committed, or copied into reports. `.env.example` contains only a placeholder. `scripts/_workflow/licensing.py` reads only `CCDC_LICENSING_CONFIGURATION`, preserving existing environment settings; retrieval invokes it before CCDC import. Licensed API import/local SDF reading passed, but live retrieval fails with missing CSD data. This is per-invocation licensing, not persisted system activation. See README for setup and testing.
 
 # Known prototype gaps and validation
 

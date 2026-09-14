@@ -83,6 +83,73 @@ This uses the channels documented in the
 [CCDC installation notes](https://downloads.ccdc.cam.ac.uk/documentation/API/installation_notes.html).
 Installing the API does not supply the database or activate its licence.
 
+#### Install a downloaded API wheel and configure your licence
+
+Obtain the Linux wheel and CSD Portfolio/data installers through the
+[CCDC downloads portal](https://www.ccdc.cam.ac.uk/support-and-resources/csdsdownloads/).
+Keep private, temporary download URLs out of repository files. Place the wheel in
+the ignored `runs/downloads/` directory. To reproduce the separate API environment
+used locally (run environment creation only if it does not already exist):
+
+```bash
+uv venv --python .pixi/envs/ml/bin/python runs/ccdc-api-env
+uv pip install --python runs/ccdc-api-env/bin/python \
+  runs/downloads/csd_python_api-3.7.1-py3-none-linux_x86_64.whl rdkit
+```
+
+Create a private `.env` in the repository root. These commands preserve an existing
+file; edit it locally to replace the placeholder with your activation key:
+
+```bash
+cp -n .env.example .env
+chmod 600 .env
+${EDITOR:-nano} .env
+```
+
+The file should contain this setting, with your actual key replacing the placeholder:
+
+```dotenv
+CCDC_LICENSING_CONFIGURATION='la-code;YOUR_ACTIVATION_KEY'
+```
+
+`.env` and `.env.*` are Git-ignored; only the placeholder `.env.example` is tracked.
+Do not put your real key in README, commands committed to Git, or run reports.
+The retrieval script loads this setting automatically from the repository-root
+`.env` before importing CCDC. An already exported environment variable takes
+precedence. The loader reads only this setting; it does not execute shell commands
+or expand variables. CCDC also supports `lf-server;URL` for a licence server.
+See [CCDC licensing instructions](https://support.ccdc.cam.ac.uk/support/solutions/articles/103000306179-how-do-i-activate-the-software-for-all-users-).
+This configures activation on each invocation; it does not install a permanent
+system-wide licence. Activation may need network access.
+
+Test API licensing and local molecule reading, without requiring CSD data:
+
+```bash
+runs/ccdc-api-env/bin/python - <<'PY'
+import sys
+sys.path.insert(0, 'scripts')
+from _workflow.licensing import load_ccdc_license
+load_ccdc_license()
+from ccdc import io
+with io.MoleculeReader('csd_mol.sdf') as reader:
+    molecule = reader[0]
+    print(f'API works: {len(molecule.atoms)} atoms, {len(molecule.bonds)} bonds')
+PY
+```
+
+After installing/configuring the CSD database from the Portfolio installer, retrieve
+structures using the same private configuration:
+
+```bash
+runs/ccdc-api-env/bin/python scripts/retrieve_structures.py \
+  --csv molecules.csv --output runs/csd-structures
+```
+
+Locally, licence checking and reading the included SDF succeeded (40 atoms, 41 bonds).
+Database retrieval still reports `CSDNotFoundException`: the wheel does not contain
+the CSD database. A licence error and a missing-database error require different fixes.
+If activation fails, check the key's current entitlement with CCDC.
+
 ### 2. Calculate reference charges
 
 ```bash
@@ -172,9 +239,10 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 The three stages were exercised with two local molecules and real Psi4/RESP charges.
 Two epochs of full-model fine-tuning passed on CPU; head-only fine-tuning passed on
 the RTX 5090. Saved weights confirmed that full-model tuning changed pretrained
-parameters and head-only tuning preserved them. CSD database access is unavailable
-locally, so only the CSD adapter contract and its missing-installation error were
-tested, not live database retrieval. All notebooks were left byte-for-byte unchanged.
+parameters and head-only tuning preserved them. The separate CCDC environment now
+passes API licensing and local molecule reading using the ignored `.env`. Live CSD
+retrieval was attempted and fails because the database is not installed; the CSD
+adapter also has a simulated contract test. All notebooks were left byte-for-byte unchanged.
 
 ```bash
 pixi run -e ml python -m unittest discover -s tests

@@ -7,6 +7,7 @@ import sys
 
 from _workflow.data import (atom_metadata, digest, new_output, read_molecule,
                             sdf_paths, valid_identifier, write_json, write_sdf)
+from _workflow.licensing import load_ccdc_license
 
 
 def main(argv=None):
@@ -26,6 +27,7 @@ def main(argv=None):
         if not identifiers or len(set(identifiers)) != len(identifiers):
             parser.error("CSV must contain at least one identifier and no duplicates")
         try:
+            load_ccdc_license()
             from ccdc import io
             reader = io.EntryReader("CSD")
         except Exception as exc:
