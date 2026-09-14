@@ -45,3 +45,8 @@ data/
 *.pyc
 
 psiresp_working_directory/*
+
+# Local environments and smoke-run outputs
+.pixi/
+.venv/
+/runs/

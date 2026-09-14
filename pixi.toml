@@ -1,0 +1,52 @@
+[workspace]
+name = "ccdc"
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[environments]
+default = ["chemistry"]
+ml = ["ml"]
+
+[feature.chemistry.dependencies]
+python = "3.10.*"
+psi4 = "1.9.*"
+libint = "2.9.*"
+psiresp-base = "0.4.2.*"
+qcelemental = "0.27.*"
+qcengine = "0.29.*"
+pydantic = "<2"
+numpy = "<2"
+scipy = "<1.12"
+pandas = "*"
+rdkit = "2024.03.*"
+ipykernel = "*"
+
+[feature.ml.dependencies]
+python = "3.10.*"
+numpy = "1.26.*"
+rdkit = "2023.09.*"
+openbabel = "3.1.*"
+ipykernel = "*"
+
+[feature.ml.pypi-dependencies]
+torch = { version = "==2.5.1+cpu", index = "https://download.pytorch.org/whl/cpu" }
+torch-scatter = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_scatter-2.1.2%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
+torch-cluster = { url = "https://data.pyg.org/whl/torch-2.5.0%2Bcpu/torch_cluster-1.6.3%2Bpt25cpu-cp310-cp310-linux_x86_64.whl" }
+torch-geometric = "==2.6.1"
+pytorch-lightning = ">=2.4,<2.6"
+torchdiffeq = "*"
+pyyaml = "*"
+fire = "*"
+absl-py = "*"
+matplotlib = "*"
+networkx = "*"
+scipy = "*"
+wandb = "*"
+tqdm = "*"
+
+[feature.chemistry.tasks]
+resp-help = "python esp_generation.py --help"
+smoke-resp = "python scripts/smoke_resp.py"
+
+[feature.ml.tasks]
+smoke-ml = "python scripts/smoke_ml.py"

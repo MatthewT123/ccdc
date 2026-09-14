@@ -50,6 +50,8 @@ These are partially connected research workflows, not a packaged application or 
 
 - Root CSD notebooks document a separate `ccdc-env` installed from the CCDC Conda channel. They require the CCDC API and access to a local CSD installation.
 - `psi4_environment.yml` is a detailed Linux/Python 3.9 Conda export. The notebook documents `conda env create -n psiresp-new -f psi4_environment.yml`.
+- For the verified local setup, use `pixi.toml` and `pixi.lock` instead of the historical setup scripts. The user requests uv for Python packages and pixi for Conda packages; pixi uses uv for the ML environment's PyPI dependencies. See `README.md` for commands.
+- `pixi install --locked` installs the default chemistry environment; `pixi install --locked -e ml` installs CPU ML. Both use Python 3.10. Psi4 1.9.1 requires the pinned libint 2.9 ABI; allowing libint 2.13 resolved but failed to import in the local setup.
 - ML environment files are in `MolFLAE/molflae-env-setup/`, targeting `MolFLAE2` and Python 3.10. Review scripts and dependency compatibility before using them: `setup.sh` currently lacks a pip-install command before its PyG extension list.
 - Run root notebooks with the repository root as cwd; run MolFLAE notebooks with `MolFLAE/` as cwd. Imports such as `model.*`, `utils.*`, and relative `config.yaml`/weight paths depend on this. Root and MolFLAE contain different `utils` directories.
 - Notebook paths referencing `/root/ccdc`, Windows scratch folders, or absent `data/latent_experiment/val` and `ckpt-zinc9M` directories are examples, not portable defaults.
@@ -65,7 +67,16 @@ python esp_generation.py /path/to/sdf_files \
   --max-iterations 3 --verbose
 ```
 
-Use fresh output paths. A normal two-stage optimization/single-point job can need three `job.run()` calls: the CLI default limit of two may stop before the final collection call. The runner executes generated `*/run_*.sh` files and writes adjacent logs. Per-molecule exceptions are logged and skipped, so a successful process exit alone does not prove all molecules succeeded.
+Use fresh output paths. A two-stage optimization/single-point job can need three `job.run()` calls; the CLI now defaults to three. The tested PsiRESP defaults did only a single-point calculation on water, so do not assume geometry optimization is enabled. The runner executes generated `*/run_*.sh` files and writes adjacent logs. Per-molecule exceptions are logged and skipped, so a successful process exit alone does not prove all molecules succeeded.
+
+The CLI now selects multiprocessing `spawn` and defaults to one ESP worker (`--n-processes`). The previous fork-based execution stalled waiting for an ESP worker after Psi4 initialization, both inside and outside the managed sandbox. Notebook/library callers must handle their multiprocessing context separately.
+
+## Verified local smoke runs (2026-09-14)
+
+- `pixi run smoke-resp`: real water SDF -> Psi4 single-point -> ESP -> RESP CSV/NPZ, with matching finite charges and approximately zero total charge. This verifies runtime behavior, not chemical accuracy across the dataset.
+- `pixi run -e ml smoke-ml`: checked-in encoder/latent-layer weights load; the example molecule has 22 heavy atoms and produces `Zh` shape `[10, 32]` and `Zx` shape `[10, 3]`. One actual `TrainLoopCharges` optimizer update has finite loss/gradients and changes charge-head parameters. W&B is disabled; the decoder is newly initialized.
+- Scripts create unique output directories under ignored `runs/`; environment files live under ignored `.pixi/`. Smoke success writes `result.json`. Do not commit generated outputs.
+- No local CSD installation was found in the usual locations; database retrieval and notebook Run All remain unverified. CCDC API/data/licence are not included in these environments.
 
 # Known prototype gaps and validation
 
@@ -76,5 +87,5 @@ Verified by source inspection; recheck before relying on these observations afte
 - `encoder_test.ipynb` imports `utils.testing.random_rotation`, but no such module is checked in.
 - `config.yaml` contains `max_grad_norm: Q` and large machine-specific GPU/worker settings; it is not a verified ready-to-run configuration.
 - Some notebook cells depend on missing or out-of-order variables. Saved outputs are historical evidence, not proof that Run All succeeds today.
-- No automated test suite, CI configuration, root package manifest, or README was found in the initial review.
+- There is no broad automated test suite or CI configuration. `scripts/smoke_resp.py` and `scripts/smoke_ml.py` provide focused executable checks; `README.md` and the pixi manifest/lock document the local setup.
 - For documentation-only changes, inspect the diff and run `git diff --check`. For code changes, use focused checks in the correct scientific environment; meaningful checks include atom/charge alignment, total charge after hydrogen absorption, charge-head gradients, and rotation behavior. Clearly report which checks actually ran.
