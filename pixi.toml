@@ -54,10 +54,13 @@ torch-cluster = { url = "https://data.pyg.org/whl/torch-2.8.0%2Bcu128/torch_clus
 torch-geometric = "==2.7.0"
 
 [feature.chemistry.tasks]
+retrieve-structures = "python scripts/retrieve_structures.py"
+predict-charges = "python scripts/predict_charges.py"
 resp-help = "python esp_generation.py --help"
 smoke-resp = "python scripts/smoke_resp.py"
 
 [feature.ml.tasks]
+finetune = "python scripts/finetune.py"
 smoke-ml = "python scripts/smoke_ml.py"
 
 [feature.cuda.tasks]

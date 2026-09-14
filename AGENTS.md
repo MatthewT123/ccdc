@@ -9,12 +9,18 @@
 
 This is a Python/Jupyter computational chemistry research prototype. It retrieves molecular structures from the Cambridge Structural Database (CSD), computes electrostatic potentials (ESP) and RESP atomic charges, and experiments with a MolFLAE variational molecular encoder and Bayesian flow decoder extended to predict charges.
 
+The supported notebook-free sequence is `scripts/retrieve_structures.py` -> `scripts/predict_charges.py` -> `scripts/finetune.py`; see README for complete commands. Charge prediction here means reference RESP calculation using the existing `esp_generation.py`, not neural inference. These scripts leave notebooks unchanged and require fresh output directories.
+
 These are partially connected research workflows, not a packaged application or a verified end-to-end training pipeline. Distinguish implemented code, notebook experiments, and validated results when answering questions.
 
 # Repository map
 
 | Path | Purpose |
 | --- | --- |
+| `scripts/retrieve_structures.py` | CSD CSV retrieval (largest component) or validated local SDF import; structure manifest and per-record status. |
+| `scripts/predict_charges.py` | Wraps existing RESP calculation; all-atom NPZ/CSV, source hashes, status, and isolated calculation artifacts. |
+| `scripts/finetune.py` | Loads pretrained MolFLAE, prepares aligned heavy-atom labels, trains on configurable device, saves metrics and checkpoints. |
+| `scripts/_workflow/` | Shared structure/label validation, checkpoint loading, hydrogen charge absorption, and validation metrics. |
 | `molecules.csv` | Input compound list; CSD lookup key is `Database identifier`. |
 | `csd_pipeline.ipynb` | Reads the CSV, retrieves CSD entries, selects the largest component, writes `sdf_files/<identifier>.sdf`, and records success/failure in `molecules_with_status.csv`. |
 | `csd_test.ipynb` | Exploratory CSD retrieval, minimization, conformer generation, and RDKit neutralization/embedding. Produces the example `csd_mol.sdf`. |
@@ -46,7 +52,9 @@ These are partially connected research workflows, not a packaged application or 
 - The training notebook explores transferring each explicit hydrogen's charge to its bonded heavy atom before removing H. Earlier cells simply drop H. Preserve the intended total-charge convention explicitly.
 - `BFN_charge` predicts per-atom charges bounded by `2 * tanh(...)`; its loss includes per-atom error and a soft molecular total-charge penalty. This does not establish model accuracy or exact charge conservation.
 - `TrainLoopCharges` initializes new encoder/decoder modules; it does not automatically load the checked-in encoder weights.
-- The official checkpoint `MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt` was downloaded and inspected with `torch.load(..., weights_only=True)` on 2026-09-14. It contains `encoder`, `Wh_mu`, `Wh_log_var`, `Wx_log_var`, and `decoder` state (epoch 24, global step 145672), but no added charge head. All four tracked encoder/projection weight files exactly match its corresponding tensors. Do not imply that downloading it enables pretrained training automatically; modified decoder compatibility remains to be checked.
+- The official checkpoint `MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt` was downloaded and inspected with `torch.load(..., weights_only=True)` on 2026-09-14. It contains `encoder`, `Wh_mu`, `Wh_log_var`, `Wx_log_var`, and `decoder` state (epoch 24, global step 145672), but no added charge head. All four tracked encoder/projection weight files exactly match its corresponding tensors. The new fine-tuning loader verifies compatibility: only the four charge-head tensors may be absent; all other missing/unexpected tensors fail. A fine-tuned checkpoint may contain all tensors.
+- New charge CSV uses `charges` and `atom_indices` (legacy `esp_generation.py` uses `resp_charges`). Its NPZ retains every input atom. Fine-tuning requires matching all-atom arrays, verifies source hashes when a manifest exists, transfers H charges to bonded heavy atoms, and preserves heavy-atom order and molecular charge. Legacy NPZ labels have count/total checks but unverified source provenance.
+- Fine-tuning uses the existing joint reconstruction/charge/KL objective with a constant CLI learning rate. `--trainable head` freezes pretrained parameters. Validation is deterministic charge MAE/RMSE on held-out molecules at decoder time 1, not a generative evaluation. Saved checkpoints can initialize a new run; optimizer/RNG state is not resumed by the CLI.
 
 # Environments and execution
 
@@ -79,6 +87,7 @@ The CLI now selects multiprocessing `spawn` and defaults to one ESP worker (`--n
 
 ## Verified local smoke runs (2026-09-14)
 
+- New workflow: two small explicit-H molecules imported, real Psi4/RESP charges calculated, and two-epoch fine-tuning passed on CPU (all parameters) and CUDA (head only). Charge heads changed in both; pretrained tensors stayed unchanged in head-only mode. This is a runtime smoke test, not evidence of prediction accuracy. `tests/test_workflows.py` checks atom alignment, charge conservation, output protection, and simulated CSD retrieval; live CSD retrieval remains unavailable.
 - `pixi run smoke-resp`: real water SDF -> Psi4 single-point -> ESP -> RESP CSV/NPZ, with matching finite charges and approximately zero total charge. This verifies runtime behavior, not chemical accuracy across the dataset.
 - `pixi run -e ml smoke-ml`: checked-in encoder/latent-layer weights load; the example molecule has 22 heavy atoms and produces `Zh` shape `[10, 32]` and `Zx` shape `[10, 3]`. One actual `TrainLoopCharges` optimizer update has finite loss/gradients and changes charge-head parameters. W&B is disabled; the decoder is newly initialized.
 - `pixi run -e ml-gpu smoke-gpu`: same encoder and charge-training check passes on CUDA 12.8 / RTX 5090, with about 247 MB peak allocated GPU memory. The CPU check also passes after adding device selection. This is not a performance benchmark or a CPU/GPU numerical-equivalence test.
