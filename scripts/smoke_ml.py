@@ -22,22 +22,25 @@ import wandb
 from model.encoder_standalone_cpu import Encoder, molecule_to_latent
 from model.train_loop import TrainLoopCharges
 from utils.config import load_config
+from utils.device import resolve_device
 from utils.data_loading import MAP_ATOM_TYPE_ONLY_TO_INDEX
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
+    parser.add_argument("--device", default=None, help="auto, cpu, cuda, or cuda:N; overrides env/config")
+    parser.add_argument("--config", type=Path, default=ROOT / "MolFLAE/config.yaml")
     args = parser.parse_args()
-    device = torch.device(args.device)
-    if device.type == "cuda" and not torch.cuda.is_available():
-        parser.error("CUDA is unavailable. Use the ml-gpu environment with GPU access.")
+    cfg = load_config(args.config)
+    try:
+        device = resolve_device(args.device, cfg)
+    except (ValueError, RuntimeError) as exc:
+        parser.error(str(exc))
     torch.set_num_threads(2)
     torch.manual_seed(0)
     output_root = ROOT / "runs"
     output_root.mkdir(exist_ok=True)
     output = Path(tempfile.mkdtemp(prefix="ml-", dir=output_root))
-    cfg = load_config("config.yaml")
     cfg["evaluation"]["save_dir"] = str(output)
 
     mol = next(iter(Chem.SDMolSupplier(str(ROOT / "csd_mol.sdf"), removeHs=False)))
@@ -62,21 +65,21 @@ def main():
     indices = torch.tensor([MAP_ATOM_TYPE_ONLY_TO_INDEX[int(n)] for n in numbers])
 
     encoder = Encoder(**cfg["encoder_config"])
-    encoder.load_state_dict(torch.load("weights/encoder_weights.pth", map_location="cpu", weights_only=True))
+    encoder.load_state_dict(torch.load("weights/encoder_weights.pth", map_location=device, weights_only=True))
     for name, filename, out_dim in (
         ("Wh_mu", "encoder_weights_KL.pth", cfg["optimal_layer_config"]["latent_dim"]),
         ("Wh_log_var", "encoder_weights_KL_Wh_log_var.pth", cfg["optimal_layer_config"]["latent_dim"]),
         ("Wx_log_var", "encoder_weights_KL_Wx_log_var.pth", 1),
     ):
         layer = nn.Linear(cfg["encoder_config"]["hidden_dim"], out_dim)
-        layer.load_state_dict(torch.load(f"weights/{filename}", map_location="cpu", weights_only=True))
+        layer.load_state_dict(torch.load(f"weights/{filename}", map_location=device, weights_only=True))
         setattr(encoder, name, layer)
     encoder.to(device)
     encoder.eval()
     with torch.no_grad():
         zh, zx, graph = molecule_to_latent(encoder, {"h": indices, "x": x})
     assert torch.isfinite(zh).all() and torch.isfinite(zx).all()
-    assert zh.device.type == device.type and zx.device.type == device.type
+    assert zh.device == device and zx.device == device
     np.savez_compressed(output / "latent.npz", Zh=zh.cpu().numpy(), Zx=zx.cpu().numpy(), batch=graph.cpu().numpy())
 
     # Exercise the actual training wrapper with correctly aligned example labels.
@@ -84,17 +87,16 @@ def main():
         h=torch.tensor(numbers, dtype=torch.long).view(-1, 1), x=x, charges=q,
     )]).to(device)
     with wandb.init(mode="disabled"):
-        cfg["decoder_config_charge"]["device"] = str(device)
-        model = TrainLoopCharges(cfg).to(device)
+        model = TrainLoopCharges(cfg, device=device)
         model.configure_optimizers()
         model.train()
         model.optim.zero_grad()
         loss = model.training_step(batch, 0)
-        assert loss.device.type == device.type
+        assert loss.device == device
         assert torch.isfinite(loss)
         loss.backward()
         grads = [p.grad for p in model.decoder.charge_head.parameters()]
-        assert all(g is not None and g.device.type == device.type and torch.isfinite(g).all() for g in grads)
+        assert all(g is not None and g.device == device and torch.isfinite(g).all() for g in grads)
         assert any(torch.count_nonzero(g) for g in grads)
         before = [p.detach().clone() for p in model.decoder.charge_head.parameters()]
         model.optim.step()

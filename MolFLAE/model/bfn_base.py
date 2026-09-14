@@ -17,6 +17,11 @@ class BFNBase(nn.Module):
     def __init__(self, *args, **kwargs):
         super(BFNBase, self).__init__(*args, **kwargs)
 
+    @property
+    def device(self):
+        """Follow actual module placement, including later .to(...) calls."""
+        return next(self.parameters()).device
+
     # def zero_center_of_mass(self, x_pos, segment_ids):
     #     size = x_pos.size()
     #     assert len(size) == 2  # TODO check this
@@ -31,7 +36,6 @@ class BFNBase(nn.Module):
         function to get the k parameters for the discretised variable
         """
         # k = torch.ones_like(mu)
-        # ones_ = torch.ones((mu.size()[1:])).cuda()
         # ones_ = ones_.unsqueeze(0)
         list_c = []
         list_l = []
@@ -292,4 +296,3 @@ class BFNBase(nn.Module):
 
     def sample(self):
         raise NotImplementedError
-

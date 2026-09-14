@@ -11,6 +11,7 @@ import torch_scatter
 from config.config import Struct
 from utils.common import compose_context, ShiftedSoftplus
 from model.bfn_base import BFNBase
+from utils.device import resolve_device
 from model.uni_transformer import UniTransformerO2TwoUpdateGeneral
 
 
@@ -126,7 +127,7 @@ class BFN4SBDDScoreModel(BFNBase):
         net_config,
         protein_atom_feature_dim,
         ligand_atom_feature_dim,
-        device="cpu",
+        device=None,
         condition_time=True,
         sigma1_coord=0.02,
         beta1=3.0,
@@ -153,7 +154,9 @@ class BFN4SBDDScoreModel(BFNBase):
 
         # Instantiate the transformer network
         if net_config.name == 'unio2net':
-            self.unio2net = UniTransformerO2TwoUpdateGeneral(**net_config.todict())
+            unio_args = net_config.todict().copy()
+            unio_args.pop("name", None)
+            self.unio2net = UniTransformerO2TwoUpdateGeneral(**unio_args)
         else:
             raise NotImplementedError
 
@@ -184,19 +187,21 @@ class BFN4SBDDScoreModel(BFNBase):
             nn.Linear(self.hidden_dim, ligand_atom_feature_dim),
         )
 
-        self.device = device
         self._edges_dict = {}
 
         # Control flags
         self.condition_time = condition_time
-        self.sigma1_coord = torch.tensor(sigma1_coord, dtype=torch.float32)  # coordinate sigma1, a schedule for bfn
-        self.beta1 = torch.tensor(beta1, dtype=torch.float32)  # type beta, a schedule for types.
+        # Non-persistent buffers follow .to(...) without changing checkpoint keys.
+        self.register_buffer("sigma1_coord", torch.tensor(sigma1_coord, dtype=torch.float32), persistent=False)
+        self.register_buffer("beta1", torch.tensor(beta1, dtype=torch.float32), persistent=False)
         self.use_discrete_t = use_discrete_t  # whether to use discrete t
         self.discrete_steps = discrete_steps
         self.t_min = t_min
         self.pos_init_mode = pos_init_mode
         self.destination_prediction = destination_prediction
         self.sampling_strategy = sampling_strategy
+        if device is not None:
+            self.to(resolve_device(device))
 
     def interdependency_modeling(
         self,
@@ -801,7 +806,7 @@ class BFN_charge(BFNBase):
         net_config,
         protein_atom_feature_dim,
         ligand_atom_feature_dim,
-        device="cpu",
+        device=None,
         condition_time=True,
         sigma1_coord=0.02,
         beta1=3.0,
@@ -872,13 +877,13 @@ class BFN_charge(BFNBase):
             nn.Linear(self.hidden_dim, ligand_atom_feature_dim),
         )
 
-        self.device = device
         self._edges_dict = {}
 
         # Control flags
         self.condition_time = condition_time
-        self.sigma1_coord = torch.tensor(sigma1_coord, dtype=torch.float32)  # coordinate sigma1, a schedule for bfn
-        self.beta1 = torch.tensor(beta1, dtype=torch.float32)  # type beta, a schedule for types.
+        # Non-persistent buffers follow .to(...) without changing checkpoint keys.
+        self.register_buffer("sigma1_coord", torch.tensor(sigma1_coord, dtype=torch.float32), persistent=False)
+        self.register_buffer("beta1", torch.tensor(beta1, dtype=torch.float32), persistent=False)
         self.use_discrete_t = use_discrete_t  # whether to use discrete t
         self.discrete_steps = discrete_steps
         self.t_min = t_min
@@ -889,10 +894,8 @@ class BFN_charge(BFNBase):
         # Charge-related config
         self.include_charge = net_config.include_charge  # master switch
         self.charge_discretised_loss = net_config.charge_discretised_loss  # false by default
-        self.sigma1_charges = torch.tensor(
-            net_config.sigma1_charges,
-            dtype=torch.float32,
-            device=self.device)
+        self.register_buffer("sigma1_charges", torch.tensor(
+            net_config.sigma1_charges, dtype=torch.float32), persistent=False)
         self.charge_loss_weight = net_config.charge_loss_weight  # lambda_q
         self.field_loss_weight = net_config.field_loss_weight  # lambda_field
         self.total_charge_weight = net_config.total_charge_weight  # lambda_totalCharge (penalty)
@@ -905,6 +908,8 @@ class BFN_charge(BFNBase):
                 ShiftedSoftplus(),
                 nn.Linear(self.hidden_dim, 1)   # scalar charge per atom
             )
+        if device is not None:
+            self.to(resolve_device(device))
 
     def interdependency_modeling(
         self,

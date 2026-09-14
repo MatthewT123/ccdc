@@ -132,16 +132,58 @@ Verified locally on the RTX 5090: encoder forward pass and charge-head optimizer
 update both passed on CUDA, with about 247 MB peak allocated GPU memory.
 
 For GPU notebooks, select `.pixi/envs/ml-gpu/bin/python`. In the training notebook,
-move both model and batches to CUDA and set the decoder's device before construction:
+device selection now follows the shared configuration below. Batches must be moved
+to the model's device before calling its training methods directly:
 
 ```python
-config["decoder_config_charge"]["device"] = "cuda"
-train_loop = TrainLoopCharges(config).to("cuda")
+train_loop = TrainLoopCharges(config)
 train_loop.configure_optimizers()
-batch = batch.to("cuda")
+batch = batch.to(train_loop.device)
 ```
 
-Selecting the GPU kernel alone does not move model tensors or data to CUDA.
+## Configure the compute device
+
+Scripts and notebooks use this selection order:
+
+1. Explicit `--device` argument (or `device=` in the Python API).
+2. `MOLFLAE_DEVICE` environment variable.
+3. `runtime.device` in `MolFLAE/config.yaml`.
+4. `auto`: the current CUDA device when available, otherwise CPU.
+
+The checked-in config uses `auto`. Supported values are `auto`, `cpu`, `cuda`, and
+an indexed GPU such as `cuda:0` (indices follow `CUDA_VISIBLE_DEVICES`). Explicitly
+requesting unavailable CUDA raises an error instead of silently using CPU.
+
+```bash
+pixi run -e ml-gpu smoke-ml --device cuda:0
+pixi run -e ml-gpu smoke-ml --device cpu
+MOLFLAE_DEVICE=cuda:0 pixi run -e ml-gpu smoke-ml
+```
+
+For a persistent project default, edit:
+
+```yaml
+runtime:
+  device: auto
+```
+
+In Python, `TrainLoop(config, device=...)` and `TrainLoopCharges(config, device=...)`
+place the whole model on the selected device. For an independently constructed
+encoder, use `encoder.to(resolve_device(config=config))` with
+`from utils.device import resolve_device`. Both decoder classes accept an optional
+`device=` argument and follow subsequent `.to(...)` calls. Schedule tensors move
+with the model; they do not add new keys to existing checkpoints. Create the
+optimizer after choosing model placement. Notebook dataset preprocessing stays on
+the host; batches move to the configured device for computation. `.cpu()` calls
+used to export NumPy/JSON data or collect logs are intentional host transfers.
+
+The `smoke-gpu` task is a convenience alias selecting CUDA explicitly. To test
+configuration and device moves, including a short charge-decoder sampling run:
+
+```bash
+pixi run -e ml python -m unittest discover -s tests -p test_devices.py
+pixi run -e ml-gpu python -m unittest discover -s tests -p test_devices.py
+```
 
 ## Notebooks and CSD access
 
