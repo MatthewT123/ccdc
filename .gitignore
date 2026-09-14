@@ -53,6 +53,7 @@ psiresp_working_directory/*
 .pixi/
 .venv/
 /runs/
+/timer.dat
 
 # Official pretrained checkpoint (download instructions in README.md)
 /MolFLAE/ckpt-zinc9M/

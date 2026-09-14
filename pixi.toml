@@ -65,3 +65,6 @@ smoke-ml = "python scripts/smoke_ml.py"
 
 [feature.cuda.tasks]
 smoke-gpu = "python scripts/smoke_ml.py --device cuda"
+
+[dependencies]
+wandb = ">=0.26.1,<0.30"
