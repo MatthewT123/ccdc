@@ -305,6 +305,40 @@ per-molecule reasons and values are in `runs/csd-small-v1-trusted-v3/status.csv`
 and its manifest. The bromine VDW override allowed Br-containing molecules to be
 evaluated instead of failing at grid construction.
 
+To make a reproducible held-out split from a trusted labelled directory, use the
+splitter below. It copies the SDF bytes, preserves the source hashes and all-atom
+labels, verifies each subset, and rejects connectivity overlap between subsets:
+
+```bash
+pixi run --locked python scripts/split_labelled_dataset.py \
+  --sdf runs/csd-small-v1-trusted-v3/sdf \
+  --charges runs/csd-small-v1-trusted-v3/charges.npz \
+  --output runs/csd-small-v1-trusted-v3-split80-20 \
+  --train-fraction 0.8 --seed 42
+```
+
+The completed split contains 470 train and 118 test molecules. Pass the test
+directories explicitly to fine-tuning and set `--val-fraction 0` so the reported
+held-out metrics are the 118-molecule test set rather than a second split:
+
+```bash
+pixi run --locked -e ml-gpu finetune \
+  --sdf runs/csd-small-v1-trusted-v3-split80-20/train/sdf \
+  --charges runs/csd-small-v1-trusted-v3-split80-20/train/charges/charges.npz \
+  --test-sdf runs/csd-small-v1-trusted-v3-split80-20/test/sdf \
+  --test-charges runs/csd-small-v1-trusted-v3-split80-20/test/charges/charges.npz \
+  --output runs/trusted-split80-20-10epoch --device cuda:0 \
+  --epochs 10 --batch-size 16 --val-fraction 0 \
+  --reconstruction-molecules 0 --wandb online \
+  --wandb-project ccdc-molflae --wandb-entity unoxford
+```
+
+With `--reconstruction-molecules 0`, “reconstruction loss” is the weighted
+stochastic coordinate/type reconstruction objective used for training; it does
+not run latent-only molecule sampling. Each epoch logs train and test
+`reconstruction_loss` and `charge_prediction_loss` locally and under the
+`evaluation/` W&B metrics.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
