@@ -361,6 +361,14 @@ objective occurred at additional epoch 15; `best-test.ckpt` preserves that model
 while `last.ckpt` preserves additional epoch 20. The per-epoch snapshots were
 pruned after selection and `selection.json` records the comparison.
 
+The differential-rate continuation starts from that selected checkpoint with
+`--lr 1e-5 --charge-lr 1e-4`. W&B run
+[`r7qrlzih`](https://wandb.ai/unoxford/ccdc-molflae/runs/r7qrlzih) completed 20
+additional epochs; its best held-out objective was at epoch 20 (reconstruction
+4.1335, charge loss 0.03301, combined objective 4.0245). The selected checkpoint
+is `runs/trusted-split80-20-differential-lr-20epoch/best-test.ckpt`, and its
+per-epoch snapshots were pruned after selection.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
@@ -444,7 +452,7 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 
 For visual inspection, open [`notebooks/reconstruction_and_charges.ipynb`](notebooks/reconstruction_and_charges.ipynb)
 with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
-`runs/trusted-split80-20-30epoch/best-test.ckpt`, shows ten deterministic structures
+`runs/trusted-split80-20-differential-lr-20epoch/best-test.ckpt`, shows ten deterministic structures
 from the held-out 118-molecule test split colored by reference and
 supplied-geometry predicted charges, and reports per-molecule MAE/RMSE. It does not
 sample new structures. Edit the first code cell to change IDs, checkpoint, or
