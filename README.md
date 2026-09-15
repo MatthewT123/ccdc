@@ -411,13 +411,14 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 
 For visual inspection, open [`notebooks/reconstruction_and_charges.ipynb`](notebooks/reconstruction_and_charges.ipynb)
 with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
-`runs/csd-pilot-100x100-epoch1/last.ckpt`, overlays five fixed test structures with
-decoded atoms, and plots reference versus predicted charges (both latent-only and
-supplied-geometry predictions). Edit the first code cell to change IDs, checkpoint,
-or device. Original bonds are shown; the decoder does not predict bonds. The notebook
-shows an automatically zoomed charge comparison with a separate full-range panel
-and flags the known label-quality problem. Set `CHARGE_YLIM` in the plotting cell
-to choose an explicit zoom range.
+`runs/trusted-split80-20-10epoch/last.ckpt`, overlays ten deterministic structures
+from the held-out 118-molecule test split with decoded atoms, and plots reference
+versus predicted charges (both latent-only and supplied-geometry predictions). Edit
+the first code cell to change IDs, checkpoint, or device. Original bonds are shown;
+the decoder does not predict bonds. The notebook shows an automatically zoomed
+charge comparison with a separate full-range panel and records the accepted-label
+trust-gate caveat. Set `CHARGE_YLIM` in the plotting cell to choose an explicit zoom
+range.
 It saves PNG figures and matched numerical predictions in a fresh ignored
 `runs/reconstruction-inspection-*` directory. It does not run Psi4 or training.
 

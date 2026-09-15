@@ -15,7 +15,7 @@ These are partially connected research workflows, not a packaged application or 
 
 # Repository map
 
-`notebooks/reconstruction_and_charges.ipynb` is a separate executed visual-inspection notebook for five fixed pilot test molecules. It loads the saved one-epoch checkpoint, samples latent-only atoms, matches by centered spatial Hungarian assignment, and shows overlays plus full-range reference/decoded/supplied-geometry charge plots. It predicts no bonds, supplies atom counts, and runs no Psi4 or training. PNG and JSON exports go to fresh ignored `runs/reconstruction-inspection-*` directories. Use the ML GPU Python kernel; original notebooks remain unchanged.
+`notebooks/reconstruction_and_charges.ipynb` is a separate executed visual-inspection notebook for ten deterministic molecules from the trusted 80/20 held-out test split. It loads the saved 10-epoch checkpoint, samples latent-only atoms, matches by centered spatial Hungarian assignment, and shows overlays plus full-range reference/decoded/supplied-geometry charge plots. It predicts no bonds, supplies atom counts, and runs no Psi4 or training. PNG and JSON exports go to fresh ignored `runs/reconstruction-inspection-*` directories. Use the ML GPU Python kernel; the original research notebooks remain unchanged.
 
 | Path | Purpose |
 | --- | --- |
