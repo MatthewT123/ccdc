@@ -439,6 +439,16 @@ so `best-test.ckpt` in `runs/trusted-900x100-charge-lr1e-3-20epoch` selects epoc
 epoch checkpoints were removed after selection, and `selection.json` records
 the comparison and learning rates.
 
+Reducing the charge-head rate to `1e-4` and continuing from that selected
+checkpoint for ten more epochs produced W&B run
+[`pzhbgxpb`](https://wandb.ai/unoxford/ccdc-molflae/runs/pzhbgxpb). The held-out
+combined objective reached 4.11737 at epoch 9 (structure loss 4.21971, charge
+loss 0.03740) and rose to 4.15214 at epoch 10. The selected model is
+`runs/trusted-900x100-charge-lr1e-4-10epoch/best-test.ckpt`; `last.ckpt` retains
+epoch 10. Charge loss alone was marginally lower at epoch 10 (0.03735), while
+the combined objective favored epoch 9. The ten temporary epoch checkpoints
+were removed and `selection.json` records the comparison.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
