@@ -460,6 +460,24 @@ The objective then rose to 4.13413 at epoch 10. Charge loss alone reached
 model: `runs/trusted-900x100-lr1e-6-charge-lr1e-4-10epoch/best-test.ckpt`.
 `last.ckpt` retains epoch 10, and `selection.json` records the comparison.
 
+The training path to the current expanded-dataset best checkpoint was:
+
+1. Adapt the official MolFLAE checkpoint on the trusted 470/118 split for 10
+   epochs at Adam `1e-4` for all parameters, then continue for 20 epochs at the
+   same rate. The selected state was continued for 20 epochs with backbone
+   `1e-5` and charge-head `1e-4`.
+2. Move to the trusted 900/100 split and continue for 20 epochs with backbone
+   `1e-5` and charge-head `1e-3`; select epoch 18 by held-out combined loss.
+3. Continue that state for 10 epochs with backbone `1e-5` and charge-head
+   `1e-4`; select epoch 9, which produced the current best objective of 4.11737.
+4. A further 10-epoch trial with backbone `1e-6` and charge-head `1e-4` did not
+   improve the result, so its checkpoint is not used for inspection.
+
+All continuation runs used batch size 16, `--val-fraction 0`, supplied test
+evaluation after every epoch, and temporary per-epoch checkpoints that were
+pruned after selecting the minimum held-out combined objective. The current
+best checkpoint is `runs/trusted-900x100-charge-lr1e-4-10epoch/best-test.ckpt`.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
@@ -543,8 +561,8 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 
 For visual inspection, open [`notebooks/reconstruction_and_charges.ipynb`](notebooks/reconstruction_and_charges.ipynb)
 with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
-`runs/trusted-split80-20-differential-lr-20epoch/best-test.ckpt`, shows ten deterministic structures
-from the held-out 118-molecule test split colored by reference and
+`runs/trusted-900x100-charge-lr1e-4-10epoch/best-test.ckpt`, shows ten deterministic structures
+from the held-out 100-molecule test split colored by reference and
 supplied-geometry predicted charges, and reports per-molecule MAE/RMSE. It does not
 sample new structures. Edit the first code cell to change IDs, checkpoint, or
 device. Original bonds are shown for context. The notebook shows an automatically
