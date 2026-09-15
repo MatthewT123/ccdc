@@ -16,7 +16,19 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 from rdkit import Chem
 
-from _workflow.data import atom_metadata, digest, new_output, structures, write_charges
+from _workflow.data import absorb_hydrogen_charges, atom_metadata, digest, new_output, structures, write_charges
+
+
+def parse_radius(value):
+    try:
+        element, radius = value.split('=', 1)
+        radius = float(radius)
+    except (ValueError, AttributeError):
+        raise argparse.ArgumentTypeError("Expected ELEMENT=RADIUS, for example Br=1.85")
+    element = element.strip().capitalize()
+    if not element or not np.isfinite(radius) or radius <= 0:
+        raise argparse.ArgumentTypeError("VDW radius must be a positive finite number")
+    return element, radius
 
 
 def main(argv=None):
@@ -27,9 +39,14 @@ def main(argv=None):
     parser.add_argument("--n-processes", type=int, default=1)
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--precise-fit", action="store_true", help="Accurate small-system RESP linear solves; reject unconverged fits")
+    parser.add_argument("--vdw-radius", action="append", type=parse_radius, default=[], metavar="ELEMENT=RADIUS",
+                        help="Override an ESP-grid van der Waals radius; repeatable (Br=1.85)")
+    parser.add_argument("--max-absolute-charge", type=float, default=2.0,
+                        help="Reject fits with any all-atom or H-absorbed heavy-atom charge above this bound")
     args = parser.parse_args(argv)
-    if args.max_iterations < 1 or args.n_processes < 1:
+    if args.max_iterations < 1 or args.n_processes < 1 or not np.isfinite(args.max_absolute_charge) or args.max_absolute_charge <= 0:
         parser.error("Iterations and process count must be positive")
+    grid_radii = dict(args.vdw_radius)
     records = structures(args.sdf)
     output = new_output(args.output)
     # Psi4 may emit timer/scratch files relative to cwd, including at process exit.
@@ -45,15 +62,26 @@ def main(argv=None):
             from _workflow.resp_solver import precise_resp_solver
             with precise_resp_solver() if args.precise_fit else nullcontext():
                 q = np.asarray(RespCalculation(record, output / "work",
-                    max_iterations=args.max_iterations, n_processes=args.n_processes).run_to_completion())
+                    max_iterations=args.max_iterations, n_processes=args.n_processes,
+                    grid_radii=grid_radii).run_to_completion())
             if q.shape != (mol.GetNumAtoms(),) or not np.isfinite(q).all():
                 raise ValueError("Invalid charge count or non-finite charges")
             total = Chem.GetFormalCharge(mol)
             if not np.isclose(q.sum(), total, atol=1e-4):
                 raise ValueError(f"Charge sum {q.sum()} differs from formal charge {total}")
+            absorbed = absorb_hydrogen_charges(mol, q)
+            max_all = float(np.max(np.abs(q)))
+            max_heavy = float(np.max(np.abs(absorbed)))
+            if max_all > args.max_absolute_charge or max_heavy > args.max_absolute_charge:
+                raise ValueError(
+                    f"Untrusted RESP magnitude: max_all_atom={max_all:.6g}, "
+                    f"max_H_absorbed={max_heavy:.6g}, limit={args.max_absolute_charge:.6g}"
+                )
             atoms = atom_metadata(mol)
             arrays[identifier] = q
-            metadata[identifier] = {"source_sdf": str(source), "source_sha256": digest(source), **atoms}
+            metadata[identifier] = {"source_sdf": str(source), "source_sha256": digest(source), **atoms,
+                "max_absolute_charge": max_all, "max_h_absorbed_charge": max_heavy,
+                "vdw_radii": grid_radii, "max_absolute_charge_limit": args.max_absolute_charge}
             metadata[identifier]['resp_solver'] = 'dense_lstsq_rcond_1e-14' if args.precise_fit else 'psiresp_default'
             rows.append({"CSD_identifier": identifier, "smiles": Chem.MolToSmiles(mol),
                          "charges": json.dumps(q.tolist()), "atom_indices": json.dumps(atoms["atom_indices"])})

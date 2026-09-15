@@ -227,7 +227,8 @@ The final run used seed 42 and the verified candidate list
 manifest. This option reapplies all filters to a fixed candidate list.
 A real Psi4/RESP smoke calculation passed on the selected small molecule QOBGUL03,
 with finite, atom-aligned charges summing to its formal charge. The remaining
-dataset still needs reference-charge calculation before training.
+dataset needs reference-charge calculation before training; the trusted-label
+workflow below records and removes calculations that do not pass its quality gate.
 
 ### 2. Calculate reference charges
 
@@ -248,6 +249,61 @@ count, and sum to the molecule's formal charge. A failure produces a nonzero exi
 status while preserving successful results. Inspect `status.csv` before training;
 fine-tuning rejects structures with missing labels. PsiRESP defaults are preserved,
 including the default single-point workflow without geometry optimization.
+
+#### Trusted labels and failed-molecule removal
+
+For a larger training pool, use the resumable batch runner with the bromine grid
+radius explicitly supplied:
+
+```bash
+pixi run --locked python scripts/batch_resp.py \
+  --sdf runs/csd-small-v1/train/sdf \
+  --output runs/csd-small-v1-trusted-resp \
+  --workers 4 --precise-fit --vdw-radius Br=1.85 \
+  --max-absolute-charge 2.0
+
+pixi run --locked python scripts/build_trusted_dataset.py \
+  --sdf runs/csd-small-v1/train/sdf \
+  --charges runs/csd-small-v1-trusted-resp \
+  --output runs/csd-small-v1-trusted \
+  --max-absolute-charge 2.0
+```
+
+`batch_resp.py` keeps one isolated attempt and log per source molecule. A Psi4,
+PsiRESP, timeout, or quality failure produces no label in the merged archive. The
+builder then copies only accepted SDF bytes into its `sdf/` directory and writes a
+matching `charges.npz`, `manifest.json`, and `status.csv`; rejected molecules are
+absent from the training directory and listed with a reason. The source hashes are
+preserved so fine-tuning can verify atom order and provenance.
+
+The default trust gate requires finite all-atom charges, the expected atom count,
+formal-charge conservation, and both raw and hydrogen-absorbed charges within ±2 e.
+The bound is a conservative model-compatibility check because the charge head is
+bounded to ±2 e; it is not a proof that a RESP fit is chemically accurate. The
+`--precise-fit` option checks the RESP linear-system residual and rejects an
+unconverged fit. The batch manifest records the VDW overrides and charge bound.
+
+The completed local run is `runs/csd-small-v1-trusted-v3`: 588 accepted molecules
+and 412 rejected from the 1,000-molecule training pool. The original 100-molecule
+evaluation set was not modified. Train using the filtered directory directly:
+
+```bash
+pixi run -e ml-gpu finetune \
+  --sdf runs/csd-small-v1-trusted-v3/sdf \
+  --charges runs/csd-small-v1-trusted-v3/charges.npz \
+  --output runs/trusted-finetune --device cuda:0 \
+  --val-fraction 0.2 --wandb online
+```
+
+This run took about 15 minutes with four CPU workers. A nonzero batch exit is
+expected when some molecules fail; use the resulting archive and filtered dataset,
+not the exit code alone. Do not reuse the earlier pilot labels: they predate this
+quality gate and included unstable RESP outliers.
+
+For this completed run, all 412 rejections were unstable RESP magnitudes; the
+per-molecule reasons and values are in `runs/csd-small-v1-trusted-v3/status.csv`
+and its manifest. The bromine VDW override allowed Br-containing molecules to be
+evaluated instead of failing at grid construction.
 
 ### 3. Fine-tune the pretrained model
 

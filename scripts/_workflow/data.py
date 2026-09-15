@@ -72,6 +72,22 @@ def atom_metadata(mol, indices=None):
             "atomic_numbers": [mol.GetAtomWithIdx(i).GetAtomicNum() for i in indices]}
 
 
+def absorb_hydrogen_charges(mol, charges):
+    """Move each explicit H charge to its bonded heavy atom, preserving order."""
+    values = np.asarray(charges, dtype=np.float64).copy()
+    if values.shape != (mol.GetNumAtoms(),):
+        raise ValueError("Charge count does not match molecule atom count")
+    for atom in mol.GetAtoms():
+        if atom.GetAtomicNum() != 1:
+            continue
+        neighbors = atom.GetNeighbors()
+        if len(neighbors) != 1 or neighbors[0].GetAtomicNum() == 1:
+            raise ValueError(f"Cannot absorb hydrogen charge for atom {atom.GetIdx()}")
+        values[neighbors[0].GetIdx()] += values[atom.GetIdx()]
+        values[atom.GetIdx()] = 0.0
+    return values
+
+
 def write_charges(output, rows, arrays, metadata, method, convention):
     with (output / "charges.csv").open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=["CSD_identifier", "smiles", "charges", "atom_indices"])
@@ -89,7 +105,7 @@ def load_labels(path, records):
     manifest_path = path.with_name("manifest.json")
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text())
-        if manifest.get("format") != "ccdc-charges-v1" or manifest.get("charge_convention") != "all_atom":
+        if manifest.get("format") not in {"ccdc-charges-v1", "ccdc-trusted-labelled-dataset-v1"} or manifest.get("charge_convention") != "all_atom":
             raise ValueError("Fine-tuning requires all-atom reference charges, not model predictions.")
         metadata = manifest["molecules"]
         for identifier, sdf, mol in records:

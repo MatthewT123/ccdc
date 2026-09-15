@@ -114,19 +114,22 @@ class RespCalculation:
 
     def __init__(self, record: ConformerRecord, working_directory: Path,
                  script_runner: Optional[Psi4Runner] = None, max_iterations: int = 3,
-                 n_processes: int = 1):
+                 n_processes: int = 1, grid_radii: Optional[dict[str, float]] = None):
         self.record = record
         self.working_directory = Path(working_directory) / f"{record.CSD_identifier}"
         self.script_runner = script_runner or Psi4Runner()
         self.max_iterations = max_iterations
         self.n_processes = n_processes
+        self.grid_radii = dict(grid_radii or {})
         self._executed_scripts: set[Path] = set()
 
     def _build_job(self) -> psiresp.Job:
         '''to build the psiresp object'''
         psiresp_mol = psiresp.Molecule.from_rdkit(self.record.mol)
-        return psiresp.Job(molecules=[psiresp_mol], working_directory=self.working_directory,
-                           n_processes=self.n_processes)
+        job = psiresp.Job(molecules=[psiresp_mol], working_directory=self.working_directory,
+                          n_processes=self.n_processes)
+        job.grid_options.vdw_radii.update(self.grid_radii)
+        return job
     
     def _run_pending_scripts(self) -> bool:
         # Each psiresp stage (optimization/, single_point/) writes its own
