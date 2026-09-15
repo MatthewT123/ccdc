@@ -449,6 +449,17 @@ epoch 10. Charge loss alone was marginally lower at epoch 10 (0.03735), while
 the combined objective favored epoch 9. The ten temporary epoch checkpoints
 were removed and `selection.json` records the comparison.
 
+The next continuation lowered the backbone rate to `1e-6` while keeping the
+charge-head rate at `1e-4` for ten epochs, starting from the selected epoch-9
+checkpoint above. W&B run
+[`yhvjan5k`](https://wandb.ai/unoxford/ccdc-molflae/runs/yhvjan5k) reached its
+best held-out combined objective at epoch 2 (4.12024; structure loss 4.22238,
+charge loss 0.03747), slightly worse than its starting objective of 4.11899.
+The objective then rose to 4.13413 at epoch 10. Charge loss alone reached
+0.03735 at epoch 10, but the structure degradation made epoch 2 the selected
+model: `runs/trusted-900x100-lr1e-6-charge-lr1e-4-10epoch/best-test.ckpt`.
+`last.ckpt` retains epoch 10, and `selection.json` records the comparison.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
