@@ -385,10 +385,19 @@ pixi run -e ml-gpu finetune \
 
 The second example assumes stage 2 was run on the CSD structures with output
 `runs/csd-charges`. For CPU use environment `ml` and `--device cpu`.
-Defaults are 10 epochs, batch size 8, constant learning rate `1e-4`, 20% validation,
-seed 42, two CPU threads, and gradient clipping at 1.0. CLI arguments override
-these run settings; `--config` selects the model YAML and `--checkpoint` selects
-the initial weights. Device configuration is described further below.
+Defaults are 10 epochs, batch size 8, backbone learning rate `1e-4`, charge-head
+learning rate equal to the backbone rate, 20% validation, seed 42, two CPU
+threads, and gradient clipping at 1.0. CLI arguments override these run settings;
+`--config` selects the model YAML and `--checkpoint` selects the initial weights.
+Device configuration is described further below.
+
+Use separate rates when adapting the pretrained network to the new charge head:
+`--lr` applies to the pretrained backbone and latent/structural parameters, while
+`--charge-lr` applies only to `decoder.charge_head`. For example,
+`--lr 1e-5 --charge-lr 1e-4` lets the charge head learn ten times faster while
+limiting changes to the pretrained representation. Both rates are saved in
+`run.json`, `config.json`, and the W&B run configuration; the per-step local
+`steps.jsonl` also records both values.
 
 The script loads the pretrained encoder, latent projections, and structural decoder;
 only the new charge head is randomly initialized. Loading rejects unexpected or

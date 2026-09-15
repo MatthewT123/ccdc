@@ -56,7 +56,10 @@ def main(argv=None):
     parser.add_argument("--device", default=None, help="auto, cpu, cuda, cuda:N; overrides env/config")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=8)
-    parser.add_argument("--lr", type=float, default=1e-4)
+    parser.add_argument("--lr", type=float, default=1e-4,
+                        help="Learning rate for pretrained backbone parameters")
+    parser.add_argument("--charge-lr", type=float,
+                        help="Learning rate for decoder.charge_head parameters; defaults to --lr")
     parser.add_argument("--val-fraction", type=float, default=0.2)
     parser.add_argument("--trainable", choices=["all", "head"], default="all")
     parser.add_argument("--seed", type=int, default=42)
@@ -75,8 +78,11 @@ def main(argv=None):
         parser.error('--test-sdf and --test-charges must be supplied together')
     if args.reconstruction_molecules < 0 or args.sample_steps < 1:
         parser.error('Reconstruction count must be nonnegative and sampling steps positive')
-    if min(args.epochs, args.batch_size, args.threads) < 1 or not math.isfinite(args.lr) or args.lr <= 0:
-        parser.error("Epochs, batch size, threads, and learning rate must be positive")
+    charge_lr = args.charge_lr if args.charge_lr is not None else args.lr
+    if (min(args.epochs, args.batch_size, args.threads) < 1
+            or not math.isfinite(args.lr) or args.lr <= 0
+            or not math.isfinite(charge_lr) or charge_lr <= 0):
+        parser.error("Epochs, batch size, threads, and learning rates must be positive")
     if not 0 <= args.val_fraction < 1 or not math.isfinite(args.max_grad_norm) or args.max_grad_norm <= 0:
         parser.error("Require 0 <= val-fraction < 1 and positive max-grad-norm")
     if not args.checkpoint.is_file():
@@ -118,6 +124,7 @@ def main(argv=None):
     config["train"]["max_grad_norm"] = args.max_grad_norm
     config["train"]["batch_size"] = args.batch_size
     config["train"]["optimizer"]["lr"] = args.lr
+    config["train"]["optimizer"]["charge_lr"] = charge_lr
     model, loaded = load_pretrained(config, args.checkpoint, device)
     model.external_logging = True
     if args.trainable == "head":
@@ -139,6 +146,7 @@ def main(argv=None):
         "charges": str(args.charges.resolve()), "charges_sha256": digest(args.charges),
         "labels_provenance_verified": verified, "charge_convention": "heavy_atom_absorb_h",
         "trainable": args.trainable, "epochs": args.epochs, "lr": args.lr,
+        "backbone_lr": args.lr, "charge_lr": charge_lr,
         "wandb_mode":args.wandb, "sample_steps":args.sample_steps,
         "checkpoint_every_epoch": args.checkpoint_every_epoch,
         "reconstruction_ids":[records[i][0] for i in reconstruction_ids],
@@ -169,7 +177,8 @@ def main(argv=None):
             if args.reconstruction_molecules:
                 result['test_latent_only']=latent_reconstruction(model,test_reconstruction_loader,device,args.sample_steps,args.seed+2001)
         return result
-    tracking_config={k:info[k] for k in ('device','seed','batch_size','epochs','lr','trainable','sample_steps','checkpoint_sha256','charges_sha256')}
+    tracking_config={k:info[k] for k in ('device','seed','batch_size','epochs','lr',
+        'backbone_lr','charge_lr','trainable','sample_steps','checkpoint_sha256','charges_sha256')}
     tracking_config.update(train_molecules=len(train_indices), validation_molecules=len(val_indices), test_molecules=len(test_records))
     run_start=time.monotonic()
     with wandb.init(mode=args.wandb,project=args.wandb_project,entity=args.wandb_entity,
@@ -202,8 +211,12 @@ def main(argv=None):
                     model.optim.step()
                     for key,value in model.last_loss_metrics.items(): totals[key]+=value*batch.num_graphs
                     graphs+=batch.num_graphs; step+=1
+                    group_lrs = {group.get('name', f'group_{index}'): group['lr']
+                                 for index, group in enumerate(model.optim.param_groups)}
                     logged={'epoch':epoch,'optimizer_step':step,'gradient_norm':float(grad_norm),
-                        'lr':model.optim.param_groups[0]['lr'],**model.last_loss_metrics}
+                        'lr':group_lrs.get('backbone', group_lrs.get('charge_head')),
+                        'backbone_lr':group_lrs.get('backbone'),
+                        'charge_lr':group_lrs.get('charge_head'),**model.last_loss_metrics}
                     steps_file.write(json.dumps(logged,allow_nan=False)+'\n'); steps_file.flush()
                     run.log(wandb_training_metrics(logged, 'train'))
                 synchronize(); epoch_seconds=time.monotonic()-epoch_start

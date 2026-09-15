@@ -1085,7 +1085,32 @@ class TrainLoopCharges(pl.LightningModule):
         """Instantiate optimizer and scheduler from configuration and return Lightning dict."""
         train_cfg = dict_to_namespace(self.cfg['train'])
         optimizer_cfg = dict_to_namespace(self.cfg['train']['optimizer'])
-        self.optim = get_optimizer(optimizer_cfg, self)
+        charge_lr = getattr(optimizer_cfg, 'charge_lr', None)
+        if charge_lr is None:
+            self.optim = get_optimizer(optimizer_cfg, self)
+        else:
+            if optimizer_cfg.type != 'adam':
+                raise NotImplementedError(
+                    f"Separate charge learning rate is not supported for optimizer: {optimizer_cfg.type}")
+            backbone, charge_head = [], []
+            for name, parameter in self.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                (charge_head if name.startswith('decoder.charge_head.') else backbone).append(parameter)
+            groups = []
+            if backbone:
+                groups.append({'params': backbone, 'lr': float(optimizer_cfg.lr),
+                               'name': 'backbone'})
+            if charge_head:
+                groups.append({'params': charge_head, 'lr': float(charge_lr),
+                               'name': 'charge_head'})
+            if not groups:
+                raise ValueError('No trainable parameters remain for the optimizer')
+            self.optim = torch.optim.Adam(
+                groups,
+                weight_decay=optimizer_cfg.weight_decay,
+                betas=(optimizer_cfg.beta1, optimizer_cfg.beta2),
+            )
         self.scheduler, self.get_last_lr = get_scheduler(train_cfg, self.optim)
 
         return {

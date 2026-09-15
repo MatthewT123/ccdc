@@ -106,6 +106,26 @@ class DeviceTests(unittest.TestCase):
             self.assertEqual(tensor.device, target)
             self.assertTrue(torch.isfinite(tensor).all())
 
+    def test_charge_optimizer_has_separate_learning_rates(self):
+        with tempfile.TemporaryDirectory() as output:
+            cfg = copy.deepcopy(self.cfg)
+            cfg["evaluation"]["save_dir"] = output
+            cfg["runtime"]["device"] = "cpu"
+            cfg["train"]["optimizer"]["lr"] = 1e-5
+            cfg["train"]["optimizer"]["charge_lr"] = 1e-4
+            model = TrainLoopCharges(cfg, device="cpu")
+            model.configure_optimizers()
+            groups = {group["name"]: group for group in model.optim.param_groups}
+            self.assertEqual(set(groups), {"backbone", "charge_head"})
+            self.assertEqual(groups["backbone"]["lr"], 1e-5)
+            self.assertEqual(groups["charge_head"]["lr"], 1e-4)
+            backbone_ids = {id(parameter) for parameter in groups["backbone"]["params"]}
+            charge_ids = {id(parameter) for parameter in groups["charge_head"]["params"]}
+            self.assertTrue(backbone_ids.isdisjoint(charge_ids))
+            self.assertTrue(all(name.startswith("decoder.charge_head.")
+                                for name, parameter in model.named_parameters()
+                                if id(parameter) in charge_ids))
+
 
 if __name__ == "__main__":
     unittest.main()
