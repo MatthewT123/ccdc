@@ -427,6 +427,18 @@ additional epochs; its best held-out objective was at epoch 20 (reconstruction
 is `runs/trusted-split80-20-differential-lr-20epoch/best-test.ckpt`, and its
 per-epoch snapshots were pruned after selection.
 
+The first run on the expanded 900/100 dataset used the higher charge-head rate
+`--lr 1e-5 --charge-lr 1e-3` for 20 epochs. W&B run
+[`2ukmiklv`](https://wandb.ai/unoxford/ccdc-molflae/runs/2ukmiklv) completed on
+CUDA in about 145 seconds, with approximately 1.27 GiB peak allocated memory.
+The held-out combined objective was lowest at epoch 18 (4.12446; structure
+loss 4.22727; charge loss 0.03810), then rose at epoch 19 and remained higher
+at epoch 20 (4.13681). The charge loss alone was lowest at epoch 12 (0.03737),
+so `best-test.ckpt` in `runs/trusted-900x100-charge-lr1e-3-20epoch` selects epoch
+18 by the combined objective; `last.ckpt` retains epoch 20. The 20 temporary
+epoch checkpoints were removed after selection, and `selection.json` records
+the comparison and learning rates.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
