@@ -415,9 +415,13 @@ labels, and are rejected if they overlap training by connectivity or refcode fam
 Test data never contributes gradients or checkpoint selection. No Psi4 calculation
 is launched by fine-tuning; it consumes existing labels.
 
-W&B `train_*` metrics show optimizer-step losses. `before_*` and `epoch_diagnostics_*`
-record training/test diagnostics; final `after_*` values appear in the run summary.
-`evaluation_*` metrics share an `evaluation_epoch` axis for before/after curves.
+W&B intentionally publishes only two loss families: `reconstruction_loss` (the
+weighted coordinate/type reconstruction term) and `charge_prediction_loss` (the
+model's weighted charge objective). They are logged per optimizer step under
+`train/`, per epoch under `epoch/`, and for each available training/validation/test
+split under `evaluation/`. The detailed per-component diagnostics remain local in
+`before.json`, `after.json`, `steps.jsonl`, and `metrics.jsonl`; they are not sent to
+W&B. Epoch performance and the selected final losses are kept in the run summary.
 `epoch_performance_*` reports optimizer-epoch seconds, molecules/second, and peak
 PyTorch allocated/reserved GiB. These memory figures exclude other applications and
 CUDA allocations outside PyTorch; epoch time excludes before/after diagnostics.

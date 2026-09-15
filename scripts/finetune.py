@@ -16,6 +16,34 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CHECKPOINT = ROOT / "MolFLAE/ckpt-zinc9M/model-epoch=24-val_loss=3.40.ckpt"
 
 
+def wandb_diagnostic_metrics(result, prefix='evaluation'):
+    """Select only reconstruction and charge losses for W&B.
+
+    Full diagnostics remain in before.json/after.json and metrics.jsonl. W&B is
+    deliberately limited to the two requested losses for each available split.
+    """
+    selected = {}
+    for dataset, payload in result.items():
+        objectives = payload.get('objectives', {})
+        for source, name in (('structure_loss', 'reconstruction_loss'),
+                             ('charge_loss', 'charge_prediction_loss')):
+            value = objectives.get(source)
+            if isinstance(value, (int, float)) and math.isfinite(value):
+                selected[f'{prefix}/{dataset}/{name}'] = value
+    return selected
+
+
+def wandb_training_metrics(values, prefix='train'):
+    """Select the two optimization losses from a per-step or epoch mapping."""
+    selected = {}
+    for source, name in (('structure_loss', 'reconstruction_loss'),
+                         ('charge_loss', 'charge_prediction_loss')):
+        value = values.get(source)
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            selected[f'{prefix}/{name}'] = value
+    return selected
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--sdf", type=Path, required=True)
@@ -128,13 +156,6 @@ def main(argv=None):
     step = 0
     def synchronize():
         if device.type=='cuda': torch.cuda.synchronize(device)
-    def flatten(value, prefix=''):
-        out={}
-        for key,item in value.items():
-            name=f'{prefix}_{key}' if prefix else key
-            if isinstance(item,dict): out.update(flatten(item,name))
-            elif isinstance(item,(int,float)): out[name]=item
-        return out
     def diagnostics():
         result={'training_set':evaluate(model,diagnostic_loader,device,args.seed+1000)}
         if n_val: result['validation_set']=evaluate(model,val_loader,device,args.seed+1001)
@@ -157,11 +178,10 @@ def main(argv=None):
             write_json(output/'wandb.json',{'id':run.id,'url':run.url,'mode':args.wandb})
             run.summary['phase']='baseline'
             run.define_metric('evaluation_epoch')
-            run.define_metric('evaluation_*', step_metric='evaluation_epoch')
+            run.define_metric('evaluation/*', step_metric='evaluation_epoch')
         baseline=diagnostics()
         write_json(output/'before.json',baseline)
-        run.log(flatten(baseline,'before'))
-        run.log({'evaluation_epoch':0, **flatten(baseline,'evaluation')})
+        run.log({'evaluation_epoch':0, **wandb_diagnostic_metrics(baseline)})
         if args.wandb!='disabled': run.summary['phase']='training'
         with (output/'metrics.jsonl').open('w') as metrics_file, (output/'steps.jsonl').open('w') as steps_file:
             for epoch in range(1,args.epochs+1):
@@ -182,7 +202,7 @@ def main(argv=None):
                     logged={'epoch':epoch,'optimizer_step':step,'gradient_norm':float(grad_norm),
                         'lr':model.optim.param_groups[0]['lr'],**model.last_loss_metrics}
                     steps_file.write(json.dumps(logged,allow_nan=False)+'\n'); steps_file.flush()
-                    run.log(flatten(logged,'train'))
+                    run.log(wandb_training_metrics(logged, 'train'))
                 synchronize(); epoch_seconds=time.monotonic()-epoch_start
                 performance={'epoch_seconds':epoch_seconds,'molecules_per_second':graphs/epoch_seconds,
                     'peak_allocated_GiB':torch.cuda.max_memory_allocated(device)/2**30 if device.type=='cuda' else 0,
@@ -194,8 +214,8 @@ def main(argv=None):
                 metrics_file.write(json.dumps(metrics,allow_nan=False)+'\n'); metrics_file.flush()
                 print(json.dumps({'epoch':epoch,'training_loss':metrics['training_loss'],**performance}),flush=True)
                 write_json(output/'after.json',measured)
-                run.log(flatten(metrics,'epoch'))
-                run.log({'evaluation_epoch':epoch, **flatten(measured,'evaluation')})
+                run.log(wandb_training_metrics(metrics['training_components'], 'epoch'))
+                run.log({'evaluation_epoch':epoch, **wandb_diagnostic_metrics(measured)})
                 score=measured['validation_set']['given_geometry_charges']['mae_e'] if n_val else metrics['training_loss']
                 payload={'format':'ccdc-finetune-v1','state_dict':model.state_dict(),'config':config,
                     'epoch':epoch,'global_step':step,'optimizer_state':model.optim.state_dict(),
@@ -205,7 +225,8 @@ def main(argv=None):
                     best=score; torch.save(payload,output/'best.ckpt')
                 model.train_losses.clear()
         if args.wandb!='disabled':
-            run.summary.update(flatten(measured,'after'))
+            run.summary.update(wandb_diagnostic_metrics(measured, 'final'))
+            run.summary.update({f'performance/{key}': value for key, value in performance.items()})
             run.summary['phase']='complete'
             run.summary['total_seconds']=time.monotonic()-run_start
     changed = any(not torch.equal(v, model.decoder.charge_head.state_dict()[k]) for k, v in initial_head.items())
