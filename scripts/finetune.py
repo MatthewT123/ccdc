@@ -68,6 +68,8 @@ def main(argv=None):
     parser.add_argument('--wandb-run-id', help='Resume tracking an existing W&B run (not optimizer state)')
     parser.add_argument('--reconstruction-molecules', type=int, default=32, help='Fixed training subset for latent-only decoding; 0 disables')
     parser.add_argument('--sample-steps', type=int, default=100)
+    parser.add_argument('--checkpoint-every-epoch', action='store_true',
+                        help='Save epoch-XXXX.ckpt alongside best.ckpt and last.ckpt')
     args = parser.parse_args(argv)
     if bool(args.test_sdf) != bool(args.test_charges):
         parser.error('--test-sdf and --test-charges must be supplied together')
@@ -138,6 +140,7 @@ def main(argv=None):
         "labels_provenance_verified": verified, "charge_convention": "heavy_atom_absorb_h",
         "trainable": args.trainable, "epochs": args.epochs, "lr": args.lr,
         "wandb_mode":args.wandb, "sample_steps":args.sample_steps,
+        "checkpoint_every_epoch": args.checkpoint_every_epoch,
         "reconstruction_ids":[records[i][0] for i in reconstruction_ids],
         "gpu_name":torch.cuda.get_device_name(device) if device.type=='cuda' else None,
         "train_ids": [records[i][0] for i in train_indices], "validation_ids": [records[i][0] for i in val_indices],
@@ -221,6 +224,8 @@ def main(argv=None):
                     'epoch':epoch,'global_step':step,'optimizer_state':model.optim.state_dict(),
                     'charge_convention':'heavy_atom_absorb_h','metrics':metrics,'source':info}
                 torch.save(payload,output/'last.ckpt')
+                if args.checkpoint_every_epoch:
+                    torch.save(payload, output / f'epoch-{epoch:04d}.ckpt')
                 if score<best:
                     best=score; torch.save(payload,output/'best.ckpt')
                 model.train_losses.clear()

@@ -339,6 +339,28 @@ not run latent-only molecule sampling. Each epoch logs train and test
 `reconstruction_loss` and `charge_prediction_loss` locally and under the
 `evaluation/` W&B metrics.
 
+To continue from that checkpoint for another 20 epochs while retaining a
+checkpoint at every epoch for overfitting analysis, use a fresh output directory:
+
+```bash
+pixi run --locked -e ml-gpu finetune \
+  --sdf runs/csd-small-v1-trusted-v3-split80-20/train/sdf \
+  --charges runs/csd-small-v1-trusted-v3-split80-20/train/charges/charges.npz \
+  --test-sdf runs/csd-small-v1-trusted-v3-split80-20/test/sdf \
+  --test-charges runs/csd-small-v1-trusted-v3-split80-20/test/charges/charges.npz \
+  --checkpoint runs/trusted-split80-20-10epoch/last.ckpt \
+  --output runs/trusted-split80-20-30epoch --device cuda:0 \
+  --epochs 20 --batch-size 16 --val-fraction 0 \
+  --reconstruction-molecules 0 --checkpoint-every-epoch --wandb online \
+  --wandb-project ccdc-molflae --wandb-entity unoxford
+```
+
+The completed continuation is W&B run
+[`0zhd5ul3`](https://wandb.ai/unoxford/ccdc-molflae/runs/0zhd5ul3). Its best held-out
+objective occurred at additional epoch 15; `best-test.ckpt` preserves that model,
+while `last.ckpt` preserves additional epoch 20. The per-epoch snapshots were
+pruned after selection and `selection.json` records the comparison.
+
 ### 3. Fine-tune the pretrained model
 
 Download the official checkpoint using the section below, then run:
@@ -397,6 +419,8 @@ The output directory contains:
 
 - `best.ckpt`: lowest validation MAE, or lowest training loss if validation is disabled.
 - `last.ckpt`: final epoch, including weights, config, optimizer state, and provenance.
+- `epoch-XXXX.ckpt`: optional per-epoch snapshots when `--checkpoint-every-epoch`
+  is supplied; use these to inspect overfitting before pruning intermediate files.
 - `metrics.jsonl`: per-epoch loss components, charge diagnostics, timing, and CUDA memory.
 - `steps.jsonl`: optimizer-step losses, learning rate, and gradient norm.
 - `before.json`, `after.json`: fixed-seed diagnostics before and after fine-tuning.
@@ -411,14 +435,14 @@ run with a new optimizer; it is not an exact optimizer/RNG resume operation.
 
 For visual inspection, open [`notebooks/reconstruction_and_charges.ipynb`](notebooks/reconstruction_and_charges.ipynb)
 with the `.pixi/envs/ml-gpu/bin/python` kernel and Run All. It loads the saved
-`runs/trusted-split80-20-10epoch/last.ckpt`, overlays ten deterministic structures
-from the held-out 118-molecule test split with decoded atoms, and plots reference
-versus predicted charges (both latent-only and supplied-geometry predictions). Edit
-the first code cell to change IDs, checkpoint, or device. Original bonds are shown;
-the decoder does not predict bonds. The notebook shows an automatically zoomed
-charge comparison with a separate full-range panel and records the accepted-label
-trust-gate caveat. Set `CHARGE_YLIM` in the plotting cell to choose an explicit zoom
-range.
+`runs/trusted-split80-20-30epoch/best-test.ckpt`, shows ten deterministic structures
+from the held-out 118-molecule test split colored by reference and
+supplied-geometry predicted charges, and reports per-molecule MAE/RMSE. It does not
+sample new structures. Edit the first code cell to change IDs, checkpoint, or
+device. Original bonds are shown for context. The notebook shows an automatically
+zoomed charge comparison with a separate full-range panel and records the
+accepted-label trust-gate caveat. Set `CHARGE_YLIM` in the plotting cell to choose
+an explicit zoom range.
 It saves PNG figures and matched numerical predictions in a fresh ignored
 `runs/reconstruction-inspection-*` directory. It does not run Psi4 or training.
 
