@@ -305,6 +305,64 @@ per-molecule reasons and values are in `runs/csd-small-v1-trusted-v3/status.csv`
 and its manifest. The bromine VDW override allowed Br-containing molecules to be
 evaluated instead of failing at grid construction.
 
+#### Expand to an exact 900/100 trusted dataset
+
+To replace failed labels rather than shrinking the training set, first retrieve a
+fresh candidate pool while excluding every identifier, CSD refcode family, and
+stereo-independent connectivity identity already present in the original train
+and eval exports:
+
+```bash
+runs/ccdc-api-env/bin/python scripts/create_csd_dataset.py \
+  --output runs/csd-expansion-v1-candidates \
+  --train-size 1200 --eval-size 1 --seed 314159 \
+  --exclude-sdf runs/csd-small-v1/train/sdf \
+  --exclude-sdf runs/csd-small-v1/eval/sdf
+```
+
+The one-molecule eval request is a sentinel so the command can use the same
+selector; the expansion pool is later split after RESP succeeds. Run the same
+trusted label workflow on this fresh pool:
+
+```bash
+pixi run --locked python scripts/batch_resp.py \
+  --sdf runs/csd-expansion-v1-candidates/train/sdf \
+  --output runs/csd-expansion-v1-resp \
+  --workers 4 --precise-fit --vdw-radius Br=1.85 \
+  --max-absolute-charge 2.0
+
+pixi run --locked python scripts/build_trusted_dataset.py \
+  --sdf runs/csd-expansion-v1-candidates/train/sdf \
+  --charges runs/csd-expansion-v1-resp \
+  --output runs/csd-expansion-v1-trusted \
+  --max-absolute-charge 2.0
+```
+
+Finally, assemble the exact target counts. The assembler keeps all trusted
+molecules from the original training pool, selects the additional molecules
+needed for 900 training examples, and reserves 100 different additional
+molecules as test data. It verifies source hashes, all-atom charge alignment,
+and connectivity/refcode-family disjointness while copying SDF bytes unchanged:
+
+```bash
+pixi run --locked python scripts/assemble_labelled_splits.py \
+  --base-sdf runs/csd-small-v1-trusted-v3/sdf \
+  --base-charges runs/csd-small-v1-trusted-v3/charges.npz \
+  --additional-sdf runs/csd-expansion-v1-trusted/sdf \
+  --additional-charges runs/csd-expansion-v1-trusted/charges.npz \
+  --output runs/csd-small-v2-trusted-900x100 \
+  --train-count 900 --test-count 100 --seed 42
+```
+
+The resulting paths are `train/sdf`, `train/charges/charges.npz`,
+`test/sdf`, and `test/charges/charges.npz`; `split.json` records the source
+archives and selection. For the verified local expansion, 710 of 1,200 fresh
+candidates passed the gate. Combined with the 588 original trusted molecules,
+the assembled dataset contains exactly 900 train and 100 test molecules. The
+490 rejected candidates remain documented in the RESP `status.csv` and are not
+silently reused. All outputs above are generated under ignored `runs/` paths;
+use fresh output directories for a new database version or seed.
+
 To make a reproducible held-out split from a trusted labelled directory, use the
 splitter below. It copies the SDF bytes, preserves the source hashes and all-atom
 labels, verifies each subset, and rejects connectivity overlap between subsets:

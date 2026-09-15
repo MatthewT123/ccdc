@@ -2,6 +2,7 @@
 
 from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -9,7 +10,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
-from create_csd_dataset import prepare
+from create_csd_dataset import exclusion_sets, prepare
+from _workflow.data import write_sdf
 
 
 class DatasetTests(unittest.TestCase):
@@ -64,6 +66,19 @@ class DatasetTests(unittest.TestCase):
         entry, _ = self.entry('CCI')
         with self.assertRaisesRegex(ValueError, 'unsupported_elements'):
             prepare(entry, 3, 10)
+
+    def test_exclusion_sets_cover_identifier_family_and_connectivity(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / 'sdf'
+            source.mkdir()
+            molecule = Chem.AddHs(Chem.MolFromSmiles('CO'))
+            self.assertEqual(AllChem.EmbedMolecule(molecule, randomSeed=42), 0)
+            write_sdf(source / 'ABCDEF01.sdf', molecule)
+            identifiers, families, identities = exclusion_sets([source])
+            self.assertEqual(identifiers, {'ABCDEF01'})
+            self.assertEqual(families, {'ABCDEF'})
+            self.assertEqual(identities,
+                             {Chem.MolToSmiles(Chem.RemoveHs(molecule), isomericSmiles=False)})
 
 
 if __name__ == '__main__':

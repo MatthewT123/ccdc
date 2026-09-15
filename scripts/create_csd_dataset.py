@@ -8,12 +8,26 @@ from pathlib import Path
 import numpy as np
 from rdkit import Chem
 
-from _workflow.data import atom_metadata, digest, new_output, read_molecule, write_json, write_sdf
+from _workflow.data import (atom_metadata, digest, new_output, read_molecule,
+                            sdf_paths, write_json, write_sdf)
 from _workflow.licensing import load_ccdc_license
 
 # Intersection of model elements and the current PsiRESP HF/6-31G* basis.
 # The model supports iodine, but this quantum basis does not.
 SUPPORTED = {1, 6, 7, 8, 9, 15, 16, 17, 35}
+
+
+def exclusion_sets(sources):
+    """Return IDs, refcode families, and connectivity identities to avoid."""
+    identifiers, families, identities = set(), set(), set()
+    for source in sources:
+        for path in sdf_paths(source):
+            molecule = read_molecule(path)
+            identifier = path.stem
+            identifiers.add(identifier)
+            families.add(identifier[:6])
+            identities.add(Chem.MolToSmiles(Chem.RemoveHs(molecule), isomericSmiles=False))
+    return identifiers, families, identities
 
 
 def prepare(entry, min_heavy, max_heavy):
@@ -79,6 +93,8 @@ def main():
     parser.add_argument('--eval-size', type=int, default=100)
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--candidates-csv', type=Path, help='Optional fixed candidate IDs (Database identifier column); all quality checks still apply')
+    parser.add_argument('--exclude-sdf', type=Path, action='append', default=[],
+                        help='SDF file or directory whose identifiers, refcode families, and connectivity are excluded')
     parser.add_argument('--min-heavy', type=int, default=3)
     parser.add_argument('--max-heavy', type=int, default=10)
     args = parser.parse_args()
@@ -92,6 +108,7 @@ def main():
         rng = np.random.default_rng(args.seed)
         selected, identities, families = [], set(), set()
         rejected = Counter()
+        excluded_ids, excluded_families, excluded_identities = exclusion_sets(args.exclude_sdf)
         target = args.train_size + args.eval_size
         if args.candidates_csv:
             with args.candidates_csv.open(newline='') as stream:
@@ -105,10 +122,19 @@ def main():
             try:
                 entry = reader.entry(index) if isinstance(index, str) else reader[int(index)]
                 family = entry.identifier[:6]
+                if entry.identifier in excluded_ids:
+                    rejected['excluded_existing_identifier'] += 1
+                    continue
+                if family in excluded_families:
+                    rejected['excluded_existing_refcode_family'] += 1
+                    continue
                 if family in families:
                     rejected['duplicate_refcode_family'] += 1
                     continue
                 mol, identity, heavy_count = prepare(entry, args.min_heavy, args.max_heavy)
+                if identity in excluded_identities:
+                    rejected['excluded_existing_connectivity'] += 1
+                    continue
                 if identity in identities:
                     rejected['duplicate_connectivity'] += 1
                     continue
@@ -131,6 +157,8 @@ def main():
             'database_version': str(io.csd_version(return_current_version=True)),
             'database_entries': len(reader), 'rdkit_version': rdBase.rdkitVersion,
             'screened_entries': scanned,
+            'excluded_sdf': [str(path.resolve()) for path in args.exclude_sdf],
+            'excluded_molecules': len(excluded_ids),
             'candidates_sha256': digest(args.candidates_csv) if args.candidates_csv else None,
             'filters': {'min_heavy': args.min_heavy, 'max_heavy': args.max_heavy,
                 'max_r_factor_percent': 5.0, 'single_component': True,
