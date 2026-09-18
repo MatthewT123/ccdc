@@ -8,7 +8,8 @@ import pytorch_lightning as pl
 from torch_geometric.data import Batch
 from torch_scatter import scatter_mean, scatter_sum
 import os
-from model.bfn4sbdd import BFN_charge
+from model.bfn4sbdd import BFN_charge, BFN4SBDDScoreModel
+from utils.device import resolve_device
 from model.encoder import Encoder
 import utils.atom_num as atom_num
 import datetime
@@ -50,7 +51,7 @@ def dict_to_namespace(d):
 
 
 class TrainLoop(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, device=None):
         """Training loop wrapper
 
         Args:
@@ -61,7 +62,10 @@ class TrainLoop(pl.LightningModule):
 
         # Instantiate encoder and decoder modules
         self.encoder = Encoder(**self.cfg['encoder_config'])
-        self.decoder = BFN4SBDDScoreModel(**self.cfg['decoder_config'])
+        decoder_config = dict(self.cfg['decoder_config'])
+        legacy_device = decoder_config.pop('device', None)
+        selected_device = resolve_device(device if device is not None else legacy_device, self.cfg)
+        self.decoder = BFN4SBDDScoreModel(**decoder_config)
 
         # Linear layers used by the KL / latent parametrization
         self.Wh_mu = nn.Linear(
@@ -91,6 +95,7 @@ class TrainLoop(pl.LightningModule):
         os.makedirs(self.save_dir, exist_ok=True)
 
         self.test_result = []
+        self.to(selected_device)
 
     def print_model_params(self):
         """Print number of trainable parameters"""
@@ -627,7 +632,7 @@ class TrainLoop(pl.LightningModule):
 
 
 class TrainLoopCharges(pl.LightningModule):
-    def __init__(self, cfg):
+    def __init__(self, cfg, device=None):
         """Training loop wrapper
 
         Args:
@@ -638,7 +643,10 @@ class TrainLoopCharges(pl.LightningModule):
 
         # Instantiate encoder and decoder modules
         self.encoder = Encoder(**self.cfg['encoder_config'])
-        self.decoder = BFN_charge(**self.cfg['decoder_config_charge'])
+        decoder_config = dict(self.cfg['decoder_config_charge'])
+        legacy_device = decoder_config.pop('device', None)
+        selected_device = resolve_device(device if device is not None else legacy_device, self.cfg)
+        self.decoder = BFN_charge(**decoder_config)
 
         # Linear layers used by the KL / latent parametrization
         self.Wh_mu = nn.Linear(
@@ -668,6 +676,7 @@ class TrainLoopCharges(pl.LightningModule):
         os.makedirs(self.save_dir, exist_ok=True)
 
         self.test_result = []
+        self.to(selected_device)
 
     def print_model_params(self):
         """Print number of trainable parameters"""
@@ -817,27 +826,41 @@ class TrainLoopCharges(pl.LightningModule):
             + self.cfg['train']['kl_loss']['kl_loss_weight'] * kl_loss
         )
 
+        # Expose components without changing the objective or checkpoint keys.
+        self.last_loss_metrics = {
+            'loss': loss.detach().item(),
+            'coordinate_loss': c_loss.mean().detach().item(),
+            'atom_type_loss': d_loss.mean().detach().item(),
+            'structure_loss': (self.cfg['train']['recon_loss']['c_loss_weight'] * c_loss
+                + self.cfg['train']['recon_loss']['d_loss_weight'] * d_loss).mean().detach().item(),
+            'charge_loss': discretised_loss.mean().detach().item(),
+            'kl_loss': kl_loss.detach().item(),
+            **self.decoder.last_charge_metrics,
+        }
+
         # logging to W&B and Lightning
-        wandb.log({
-            'lr': self.get_last_lr(),
-            'train_loss': loss.item(),
-            'train_recon_loss': recon_loss.item(),
-            'train_kl_loss': kl_loss.item()
-        })
+        if not getattr(self, "external_logging", False):
+            wandb.log({
+                'lr': self.get_last_lr(),
+                'train_loss': loss.item(),
+                'train_recon_loss': recon_loss.item(),
+                'train_kl_loss': kl_loss.item()
+            })
 
         t5 = time()
 
-        self.log_dict(
-            {
-                'lr': self.get_last_lr(),
-                'train_loss': loss.item(),
-                'recon_loss': recon_loss.item(),
-                'kl_loss': kl_loss.item()
-            },
-            on_step=True,
-            prog_bar=True,
-            batch_size=self.cfg['train']['batch_size'],
-        )
+        if self._trainer is not None:
+            self.log_dict(
+                {
+                    'lr': self.get_last_lr(),
+                    'train_loss': loss.item(),
+                    'recon_loss': recon_loss.item(),
+                    'kl_loss': kl_loss.item()
+                },
+                on_step=True,
+                prog_bar=True,
+                batch_size=self.cfg['train']['batch_size'],
+            )
 
         # skip updates when loss is not finite
         if not torch.isfinite(loss):
@@ -1062,7 +1085,32 @@ class TrainLoopCharges(pl.LightningModule):
         """Instantiate optimizer and scheduler from configuration and return Lightning dict."""
         train_cfg = dict_to_namespace(self.cfg['train'])
         optimizer_cfg = dict_to_namespace(self.cfg['train']['optimizer'])
-        self.optim = get_optimizer(optimizer_cfg, self)
+        charge_lr = getattr(optimizer_cfg, 'charge_lr', None)
+        if charge_lr is None:
+            self.optim = get_optimizer(optimizer_cfg, self)
+        else:
+            if optimizer_cfg.type != 'adam':
+                raise NotImplementedError(
+                    f"Separate charge learning rate is not supported for optimizer: {optimizer_cfg.type}")
+            backbone, charge_head = [], []
+            for name, parameter in self.named_parameters():
+                if not parameter.requires_grad:
+                    continue
+                (charge_head if name.startswith('decoder.charge_head.') else backbone).append(parameter)
+            groups = []
+            if backbone:
+                groups.append({'params': backbone, 'lr': float(optimizer_cfg.lr),
+                               'name': 'backbone'})
+            if charge_head:
+                groups.append({'params': charge_head, 'lr': float(charge_lr),
+                               'name': 'charge_head'})
+            if not groups:
+                raise ValueError('No trainable parameters remain for the optimizer')
+            self.optim = torch.optim.Adam(
+                groups,
+                weight_decay=optimizer_cfg.weight_decay,
+                betas=(optimizer_cfg.beta1, optimizer_cfg.beta2),
+            )
         self.scheduler, self.get_last_lr = get_scheduler(train_cfg, self.optim)
 
         return {

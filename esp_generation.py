@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 import logging
+import multiprocessing
 
 #input output
 import argparse
@@ -112,17 +113,23 @@ class RespCalculation:
     single_point), and return the final RESP charges."""
 
     def __init__(self, record: ConformerRecord, working_directory: Path,
-                 script_runner: Optional[Psi4Runner] = None, max_iterations: int = 2):
+                 script_runner: Optional[Psi4Runner] = None, max_iterations: int = 3,
+                 n_processes: int = 1, grid_radii: Optional[dict[str, float]] = None):
         self.record = record
         self.working_directory = Path(working_directory) / f"{record.CSD_identifier}"
         self.script_runner = script_runner or Psi4Runner()
         self.max_iterations = max_iterations
+        self.n_processes = n_processes
+        self.grid_radii = dict(grid_radii or {})
         self._executed_scripts: set[Path] = set()
 
     def _build_job(self) -> psiresp.Job:
         '''to build the psiresp object'''
         psiresp_mol = psiresp.Molecule.from_rdkit(self.record.mol)
-        return psiresp.Job(molecules=[psiresp_mol], working_directory=self.working_directory)
+        job = psiresp.Job(molecules=[psiresp_mol], working_directory=self.working_directory,
+                          n_processes=self.n_processes)
+        job.grid_options.vdw_radii.update(self.grid_radii)
+        return job
     
     def _run_pending_scripts(self) -> bool:
         # Each psiresp stage (optimization/, single_point/) writes its own
@@ -198,13 +205,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--working-dir", type=Path, default=Path("psiresp_working_directory"))
     parser.add_argument("--output-csv", type=Path, default=Path("resp_charges.csv"))
     parser.add_argument("--output-npz", type=Path, default=Path("resp_charges.npz"))
-    parser.add_argument("--max-iterations", type=int, default=2)
+    parser.add_argument("--max-iterations", type=int, default=3)
+    parser.add_argument("--n-processes", type=int, default=1,
+                        help="Number of ESP worker processes (default: 1)")
     parser.add_argument("-v", "--verbose", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    # Psi4 initializes native thread pools. Forking after import can deadlock
+    # ESP workers; start clean Python processes instead.
+    multiprocessing.set_start_method("spawn", force=True)
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
@@ -218,7 +230,8 @@ def main() -> None:
             continue
 
         try:
-            calc = RespCalculation(record, args.working_dir, max_iterations=args.max_iterations)
+            calc = RespCalculation(record, args.working_dir, max_iterations=args.max_iterations,
+                                   n_processes=args.n_processes)
             charges = calc.run_to_completion()
         except Exception:
             logger.exception("[%s] failed, skipping", record.CSD_identifier)
@@ -232,4 +245,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
