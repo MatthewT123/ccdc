@@ -209,11 +209,8 @@ def molecule_to_latent(encoder, mol_entry, return_numpy=False):
     # load the config
     cfg = load_config("config.yaml")
 
-    # detect device from model (fallback to cpu)
-    try:
-        device = next(encoder.parameters()).device
-    except StopIteration:
-        device = torch.device("cpu")
+    # The caller configures placement through encoder.to(device).
+    device = next(encoder.parameters()).device
 
     # pull data
     h = mol_entry['h']  # expect 1D tensor-like of atom types
@@ -246,7 +243,6 @@ def molecule_to_latent(encoder, mol_entry, return_numpy=False):
     x_centered, _ = center_pos(x, batch_ligand, mode=True)
 
     # Encode into latent space
-    model_device_before = device
     encoder.eval()
     with torch.no_grad():
         Zh, Zx, global_batch, Zh_kl_loss, Zx_kl_loss = encoder.encode(one_hot_h, x_centered, batch_ligand, deterministic=True)
